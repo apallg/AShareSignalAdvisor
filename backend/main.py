@@ -19,7 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from backend.api import stock, market, sectors, portfolio, alerts, backtest, sentiment, news
+from backend.api import stock, market, sectors, portfolio, alerts, backtest, sentiment, news, trading
 
 app.include_router(market.router, prefix="/api/market", tags=["大盘"])
 app.include_router(stock.router, prefix="/api/stock", tags=["个股"])
@@ -29,6 +29,7 @@ app.include_router(alerts.router, prefix="/api/alerts", tags=["告警"])
 app.include_router(backtest.router, prefix="/api/backtest", tags=["回测"])
 app.include_router(sentiment.router, prefix="/api/sentiment", tags=["情绪"])
 app.include_router(news.router, prefix="/api/news", tags=["新闻"])
+app.include_router(trading.router, prefix="/api/trading", tags=["交易"])
 
 import time
 

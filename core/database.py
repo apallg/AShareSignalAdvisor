@@ -154,6 +154,41 @@ class Database:
             "reason TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
             "INDEX idx_created (created_at)"
             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+            "CREATE TABLE IF NOT EXISTS orders ("
+            "id VARCHAR(32) PRIMARY KEY,"
+            "symbol VARCHAR(10) NOT NULL, name VARCHAR(50) NOT NULL,"
+            "side VARCHAR(5) NOT NULL, quantity INT NOT NULL DEFAULT 0,"
+            "price_type VARCHAR(10) NOT NULL DEFAULT 'market',"
+            "price DECIMAL(12,3) NOT NULL DEFAULT 0,"
+            "filled_qty INT DEFAULT 0, filled_price DECIMAL(12,3) DEFAULT 0,"
+            "status VARCHAR(20) NOT NULL DEFAULT 'pending',"
+            "created_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+            "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
+            "INDEX idx_symbol (symbol), INDEX idx_status (status)"
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+            "CREATE TABLE IF NOT EXISTS trades ("
+            "id VARCHAR(32) PRIMARY KEY,"
+            "order_id VARCHAR(32) NOT NULL,"
+            "symbol VARCHAR(10) NOT NULL, name VARCHAR(50) NOT NULL,"
+            "side VARCHAR(5) NOT NULL,"
+            "price DECIMAL(12,3) NOT NULL, quantity INT NOT NULL,"
+            "amount DECIMAL(16,2) NOT NULL,"
+            "commission DECIMAL(10,2) DEFAULT 0,"
+            "stamp_duty DECIMAL(10,2) DEFAULT 0,"
+            "trade_time DATETIME DEFAULT CURRENT_TIMESTAMP,"
+            "INDEX idx_symbol (symbol), INDEX idx_order (order_id)"
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+            "CREATE TABLE IF NOT EXISTS accounts ("
+            "id VARCHAR(32) PRIMARY KEY,"
+            "cash DECIMAL(16,2) NOT NULL DEFAULT 0,"
+            "frozen DECIMAL(16,2) NOT NULL DEFAULT 0,"
+            "market_value DECIMAL(16,2) NOT NULL DEFAULT 0,"
+            "total_assets DECIMAL(16,2) NOT NULL DEFAULT 0,"
+            "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         ]
         for sql in sqls:
             cls.execute(sql)
