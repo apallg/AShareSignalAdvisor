@@ -1,0 +1,58 @@
+﻿import sys
+import logging
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+logger = logging.getLogger(__name__)
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+app = FastAPI(title="麒麟投研 - A股量化分析", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+from backend.api import stock, market, sectors, portfolio, alerts, backtest, sentiment, news
+
+app.include_router(market.router, prefix="/api/market", tags=["大盘"])
+app.include_router(stock.router, prefix="/api/stock", tags=["个股"])
+app.include_router(sectors.router, prefix="/api/sectors", tags=["板块"])
+app.include_router(portfolio.router, prefix="/api/portfolio", tags=["持仓"])
+app.include_router(alerts.router, prefix="/api/alerts", tags=["告警"])
+app.include_router(backtest.router, prefix="/api/backtest", tags=["回测"])
+app.include_router(sentiment.router, prefix="/api/sentiment", tags=["情绪"])
+app.include_router(news.router, prefix="/api/news", tags=["新闻"])
+
+import time
+
+@app.on_event("startup")
+def startup():
+    for attempt in range(30):
+        try:
+            from core.database import Database
+            if Database.is_available():
+                Database.create_tables()
+                logger.info(f"数据库表已就绪 (第{attempt+1}次尝试)")
+                return
+            else:
+                logger.info(f"数据库未启用 (第{attempt+1}次尝试)")
+        except Exception as e:
+            logger.warning(f"数据库连接中... (第{attempt+1}次: {e})")
+        time.sleep(2)
+    logger.warning("数据库初始化已跳过")
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "app": "麒麟投研", "version": "1.0.0"}
+
+if __name__ == "__main__":
+    import uvicorn
+    logger.info("启动 麒麟投研 API 服务器 http://0.0.0.0:8000")
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=False)
