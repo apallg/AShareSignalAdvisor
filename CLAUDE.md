@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-麒麟投研 — A股量化分析平台。采用三层 Docker 部署：Vue 3 前端 (Nginx) → FastAPI 后端 → MySQL 8.0。
+Apallg投研 — A股量化分析平台。采用三层 Docker 部署：Vue 3 前端 (Nginx) → FastAPI 后端 → MySQL 8.0。
 
 ## 常用命令
 
@@ -53,10 +53,11 @@ python -m db.setup
   │  /api/*  →  proxy_pass backend:8000
   ▼
 后端 (FastAPI, :8000)
-  ├── backend/api/    端点层 (market, stock, sectors, portfolio, alerts, backtest, sentiment, news)
-  ├── core/           数据层 (多源行情获取、MySQL储存、实时行情、选股器、持仓管理)
+  ├── backend/api/    端点层 (market, stock, sectors, portfolio, alerts, backtest, sentiment, news, trading, live_trading, strategies)
+  ├── core/           数据层 (多源行情获取含 miniQMT、MySQL储存、实时行情)
   ├── engine/         回测引擎 (封装 backtrader Cerebro + 自定义 PandasData 含技术指标列)
   ├── strategies/     策略库 (自动发现、热拔插注册表)
+  ├── execution/      交易执行 (FakeBroker 模拟撮合 + live/ 实盘策略运行引擎)
   ├── nlp/            情绪分析管道 (采集→LLM分类→因子计算→定时调度)
   ├── agents/         5角色 AI 辩论面板 (技术/基本面/资金/宏观/风控 → 主持人综合)
   └── utils/          工具 (LLM客户端、缓存、通知)
@@ -67,8 +68,8 @@ MySQL 8.0 (qilin_stock 库)
 
 ## 关键设计
 
-### 数据获取三级回退链
-`core/data_fetcher.py` 中通过 `_get_with_fallback` 实现：内存缓存 → 多数据源串行尝试 (腾讯HTTP → 网易HTTP → akshare → BaoStock) → MySQL 持久缓存回退。所有数据写入时同时持久化到 MySQL 作为下次启动的冷缓存。
+### 数据获取四级回退链
+`core/data_fetcher.py` 中通过 `_get_with_fallback` 实现：内存缓存 → 多数据源串行尝试 **(miniQMT → 腾讯HTTP → 网易HTTP → akshare → BaoStock)** → MySQL 持久缓存回退。QMT 数据源 (`core/data_sources/miniqmt_source.py`) 作为主源，无数据时自动降级。所有数据写入时同时持久化到 MySQL 作为下次启动的冷缓存。
 
 ### 策略热拔插
 `strategies/registry.py` 的 `auto_discover()` 在 import 时扫描 `classic/`、`hybrid/`、`community/`、`custom/` 子目录，自动注册所有 `BaseStrategy` 子类。新增策略只需在对应目录下创建 `.py` 文件并继承 `BaseStrategy`，无需修改注册表。
@@ -83,33 +84,35 @@ MySQL 8.0 (qilin_stock 库)
 `agents/panel.py` — 5个独立 Agent (技术/基本面/资金面/宏观/风控) 各自输出分析，风控官看到前4者分析后输出风险评估，最后由主持人综合全部输出给出最终决议。
 
 ### 前端路由
-Vue Router: `/market`(大盘) `/stock`(个股) `/sectors`(板块) `/portfolio`(持仓) `/scan`(选股) `/alerts`(告警) `/backtest`(回测) `/lab`(策略实验室) `/sentiment`(情绪)
+Vue Router: `/market`(大盘) `/stock`(个股) `/sectors`(板块) `/portfolio`(持仓) `/scan`(选股) `/alerts`(告警) `/backtest`(回测) `/lab`(策略实验室) `/sentiment`(情绪) `/trading`(模拟交易) `/live`(策略实盘) `/editor`(策略编辑器)
 
 ### 配置
 `config.py` — 所有配置通过环境变量 (`python-dotenv`) 加载。`.env` 包含 API 密钥和数据库密码（已加入 `.gitignore`）。
 
-### QMT 交易执行层（开发中 — FakeBroker 阶段）
+### 策略双轨制：回测 + 实盘
+每个策略有两个版本，在 `strategies/` 目录下通过 API `/api/strategies/template` 自动生成：
+- **回测版** — 继承 `BaseStrategy`，基于 backtrader，在 `/backtest` 和 `/lab` 中使用
+- **实盘版** — 继承 `LiveStrategy` (`execution/live/base.py`)，不依赖 backtrader，通过 `check_signal(df)` 直接返回 `{action, size_ratio, reason}`
 
-QMT 需券商权限，当前采用**渐进式开发**策略：
+`execution/live/strategies.py` 在 import 时自动扫描 `strategies/{classic,hybrid,custom,community}/` 发现所有 `LiveStrategy` 子类。策略文件通过 API 保存/删除后调用 `reload_live_strategies()` 热重载。
+
+### 实盘策略运行引擎 (`execution/live/runner.py`)
+`StrategyRunner` — 在后台线程中轮询行情 → 计算指标（`Analyzer.add_indicators`）→ 调用 `LiveStrategy.check_signal()` → 自动向 FakeBroker 下单。支持启动/停止/状态查询/信号日志，通过 `/api/live/*` 端点控制。
+
+### 策略管理 + AI 生成 (`backend/api/strategies.py`)
+- 策略文件 CRUD（只允许编辑 `custom/` 和 `community/` 目录）
+- AI 策略生成流水线：用户输入需求 → LLM 生成代码 → 代码审查 → 逻辑审查，3 步串行输出
+- 写入文件后自动重载回测和实盘两个注册表
+
+### 交易执行层
 
 ```
 策略信号 → Execution抽象接口 (execution/base.py)
-              ├── FakeBroker (当前阶段) — 本地模拟撮合、无外部依赖
+              ├── FakeBroker — 本地模拟撮合（按最新价成交、MySQL 记录、虚拟资金）
               └── QmtBroker (权限开通后) — 对接 xtquant.XtQuantTrader
 ```
 
-**FakeBroker 功能：**
-- 按最新价模拟成交（买一/卖一）
-- 记录全部委托/成交到 MySQL
-- 维护虚拟资金和持仓
-- 与后续 QmtBroker 接口完全一致，切换时策略层零改动
-
-**开发顺序：**
-1. `execution/` 抽象接口 + FakeBroker ← 当前
-2. 数据库 orders/trades/accounts 表
-3. 后端 trading API 端点
-4. 前端交易面板
-5. 权限开通后 → 新增 QmtBroker 实现，替换即可
+FakeBroker 已完成模拟交易闭环：委托/成交/持仓/账户 API（`/api/trading/*`）+ 前端交易面板（`/trading`）+ 实盘自动交易（`/live`）。
 
 ### 完整 QMT 对接方案（权限开通后执行）
 

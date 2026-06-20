@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-app = FastAPI(title="麒麟投研 - A股量化分析", version="1.0.0")
+app = FastAPI(title="Apallg投研 - A股量化分析", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,7 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from backend.api import stock, market, sectors, portfolio, alerts, backtest, sentiment, news, trading
+from backend.api import stock, market, sectors, portfolio, alerts, backtest, sentiment, news, trading, live_trading, strategies
 
 app.include_router(market.router, prefix="/api/market", tags=["大盘"])
 app.include_router(stock.router, prefix="/api/stock", tags=["个股"])
@@ -30,6 +30,8 @@ app.include_router(backtest.router, prefix="/api/backtest", tags=["回测"])
 app.include_router(sentiment.router, prefix="/api/sentiment", tags=["情绪"])
 app.include_router(news.router, prefix="/api/news", tags=["新闻"])
 app.include_router(trading.router, prefix="/api/trading", tags=["交易"])
+app.include_router(live_trading.router, prefix="/api/live", tags=["实盘"])
+app.include_router(strategies.router, prefix="/api/strategies", tags=["策略管理"])
 
 import time
 
@@ -51,9 +53,9 @@ def startup():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "app": "麒麟投研", "version": "1.0.0"}
+    return {"status": "ok", "app": "Apallg投研", "version": "1.0.0"}
 
 if __name__ == "__main__":
     import uvicorn
-    logger.info("启动 麒麟投研 API 服务器 http://0.0.0.0:8000")
+    logger.info("启动 Apallg投研 API 服务器 http://0.0.0.0:8000")
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=False)

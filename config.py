@@ -53,3 +53,11 @@ MYSQL_USER = os.getenv("MYSQL_USER", "root")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "qilin_stock")
 MYSQL_ENABLED = bool(MYSQL_PASSWORD and MYSQL_PASSWORD != "your_mysql_password_here")
+
+# QMT / miniQMT 交易配置
+BROKER_FAKE = "fake"
+BROKER_QMT = "qmt"
+BROKER_TYPE = os.getenv("BROKER_TYPE", BROKER_FAKE)
+QMT_USERDATA_DIR = os.getenv("QMT_USERDATA_DIR", "D:\\迅投极速交易终端 睿智融科版\\userdata_mini")
+QMT_ACCOUNT = os.getenv("QMT_ACCOUNT", "")
+QMT_SESSION_ID = int(os.getenv("QMT_SESSION_ID", "123456"))

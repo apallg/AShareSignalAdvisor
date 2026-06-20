@@ -7,13 +7,13 @@ class _DataSourceRegistry:
     def __init__(self):
         self._categories = {
             "stock_daily": {
-                "primary": "baostock",
+                "primary": "miniqmt",
                 "fallback": "tencent",
                 "description": "日K线",
             },
             "realtime": {
-                "primary": "tencent",
-                "fallback": "sina",
+                "primary": "miniqmt",
+                "fallback": "akshare",
                 "description": "实时行情",
             },
             "financial": {

@@ -3,6 +3,7 @@ MySQL 数据库模块 - 连接管理 + 数据持久化
 """
 import json
 import threading
+import time
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import pymysql
@@ -10,8 +11,21 @@ import pymysql.cursors
 import config
 
 
+def _is_connection_alive(conn):
+    """检查连接是否真正可用（socket 非空 + ping 通过）"""
+    if conn is None:
+        return False
+    try:
+        if conn._sock is None:
+            return False
+        conn.ping(reconnect=False)
+        return True
+    except Exception:
+        return False
+
+
 class Database:
-    """MySQL 连接管理器"""
+    """MySQL 连接管理器（线程安全 + 自动重连 + 查询重试）"""
     _conn = None
     _lock = threading.Lock()
 
@@ -20,47 +34,64 @@ class Database:
         return config.MYSQL_ENABLED
 
     @classmethod
+    def _connect(cls):
+        return pymysql.connect(
+            host=config.MYSQL_HOST, port=config.MYSQL_PORT,
+            user=config.MYSQL_USER, password=config.MYSQL_PASSWORD,
+            database=config.MYSQL_DATABASE, charset="utf8mb4",
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=True,
+            connect_timeout=5, read_timeout=30, write_timeout=30,
+        )
+
+    @classmethod
     def get_connection(cls):
         with cls._lock:
-            if cls._conn is None:
-                cls._conn = pymysql.connect(
-                    host=config.MYSQL_HOST, port=config.MYSQL_PORT,
-                    user=config.MYSQL_USER, password=config.MYSQL_PASSWORD,
-                    database=config.MYSQL_DATABASE, charset="utf8mb4",
-                    cursorclass=pymysql.cursors.DictCursor,
-                )
-            try:
-                cls._conn.ping(reconnect=True)
-            except Exception:
-                cls._conn = pymysql.connect(
-                    host=config.MYSQL_HOST, port=config.MYSQL_PORT,
-                    user=config.MYSQL_USER, password=config.MYSQL_PASSWORD,
-                    database=config.MYSQL_DATABASE, charset="utf8mb4",
-                    cursorclass=pymysql.cursors.DictCursor,
-                )
+            if not _is_connection_alive(cls._conn):
+                try:
+                    if cls._conn is not None:
+                        cls._conn.close()
+                except Exception:
+                    pass
+                cls._conn = cls._connect()
             return cls._conn
 
     @classmethod
+    def _execute_with_retry(cls, operation, sql, params=(), commit=False):
+        """带自动重连重试的查询执行"""
+        max_retries = 2
+        for attempt in range(max_retries):
+            conn = cls.get_connection()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(sql, params)
+                    if commit:
+                        conn.commit()
+                    return operation(cur)
+            except (pymysql.err.Error, AttributeError, ValueError, OSError):
+                if attempt < max_retries - 1:
+                    with cls._lock:
+                        try:
+                            if cls._conn is not None:
+                                cls._conn.close()
+                        except Exception:
+                            pass
+                        cls._conn = cls._connect()
+                    time.sleep(0.1)
+                    continue
+                raise
+
+    @classmethod
     def execute(cls, sql, params=()):
-        conn = cls.get_connection()
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            conn.commit()
-            return cur.lastrowid
+        return cls._execute_with_retry(lambda cur: cur.lastrowid, sql, params, commit=True)
 
     @classmethod
     def fetchone(cls, sql, params=()):
-        conn = cls.get_connection()
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            return cur.fetchone()
+        return cls._execute_with_retry(lambda cur: cur.fetchone(), sql, params)
 
     @classmethod
     def fetchall(cls, sql, params=()):
-        conn = cls.get_connection()
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            return cur.fetchall()
+        return cls._execute_with_retry(lambda cur: cur.fetchall(), sql, params)
 
     @classmethod
     def create_tables(cls):

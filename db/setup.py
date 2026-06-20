@@ -8,7 +8,7 @@ import config
 logger = logging.getLogger(__name__)
 
 def setup():
-    logger.info("麒麟投研 - MySQL 数据库初始化")
+    logger.info("Apallg投研 - MySQL 数据库初始化")
     logger.info("=" * 40)
     if not config.MYSQL_PASSWORD or config.MYSQL_PASSWORD == "your_mysql_password_here":
         logger.error("请先编辑 .env 文件，填入 MYSQL_PASSWORD")

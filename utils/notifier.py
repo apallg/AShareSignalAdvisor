@@ -79,7 +79,7 @@ class CozeNotifier:
         return self.send_alert(
             stock_name="测试股票", stock_code="000000",
             risk_level="低风险", risk_score=3,
-            risk_detail="这是一条来自麒麟投研的测试通知",
+            risk_detail="这是一条来自Apallg投研的测试通知",
             suggestion="如收到此消息，说明 Coze 通知通道已正常工作",
         )
  

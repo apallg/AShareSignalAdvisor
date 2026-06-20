@@ -24,10 +24,14 @@ def _retry(func, ma=3, dl=3):
     raise last
 
 class DataFetcher:
+    _spot_cache = None
+    _spot_cache_time = 0
+
     def __init__(self, cache=None):
         self.cache = cache or CacheManager()
         self._save_count = 0
         self._ds = {}  # 数据源追踪
+        self._miniqmt_source = None
 
     def _mark_source(self, key, source):
         self._ds[key] = source
@@ -35,6 +39,17 @@ class DataFetcher:
     def get_sources(self):
         """获取本次请求各数据来源"""
         return dict(self._ds)
+
+    @property
+    def _qmt(self):
+        """懒加载 MiniQmtSource"""
+        if self._miniqmt_source is None:
+            try:
+                from core.data_sources.miniqmt_source import MiniQmtSource
+                self._miniqmt_source = MiniQmtSource()
+            except Exception:
+                self._miniqmt_source = False
+        return self._miniqmt_source if self._miniqmt_source else None
 
     def _persist(self, key, data, expire=3600):
         """持久化数据到 MySQL，带批量清理"""
@@ -229,6 +244,19 @@ class DataFetcher:
         sd_dash = start_date[:4] + "-" + start_date[4:6] + "-" + start_date[6:8] if len(start_date) >= 8 else start_date
         ed_dash = end_date[:4] + "-" + end_date[4:6] + "-" + end_date[6:8] if len(end_date) >= 8 else end_date
         ck = CacheManager.make_key("daily", symbol, start_date, end_date, adjust)
+
+        # 0. Try miniQMT (如果可用)
+        qmt = self._qmt
+        if qmt:
+            try:
+                result = qmt.get_kline(symbol, "1d", sd_dash, ed_dash)
+                if result is not None and not result.empty:
+                    self._mark_source("stock_daily", "miniQMT(xtdata)")
+                    self.cache.set(ck, result, expire=config.CACHE_EXPIRE_DATA)
+                    self._persist(ck, result, config.CACHE_EXPIRE_DATA)
+                    return result
+            except Exception as e:
+                logger.debug(f"miniQMT daily({symbol}) 未命中: {e}")
 
         # 1. Try Tencent HTTP API (不会被安全软件拦截)
         try:
@@ -527,7 +555,32 @@ class DataFetcher:
             return {}
 
     def _fetch_realtime(self, symbol):
-        df = _retry(lambda: ak.stock_zh_a_spot_em(), ma=3, dl=2)
+        # 0. 先试 miniQMT
+        qmt = self._qmt
+        if qmt:
+            try:
+                quotes = qmt.get_quotes([symbol])
+                if symbol in quotes:
+                    q = quotes[symbol]
+                    return {
+                        "名称": q.get("name", ""),
+                        "最新价": q.get("price", 0),
+                        "涨跌幅": q.get("pct_chg", 0),
+                        "涨跌额": q.get("change", 0),
+                        "成交量": q.get("volume", 0),
+                        "成交额": q.get("amount", 0),
+                        "市盈率-动态": "",
+                        "市净率": "",
+                    }
+            except Exception as e:
+                logger.debug(f"miniQMT 实时行情({symbol}) 未命中: {e}")
+
+        # 1. 回退 akshare (缓存全市场快照 30 秒)
+        now = time.time()
+        if DataFetcher._spot_cache is None or now - DataFetcher._spot_cache_time > 30:
+            DataFetcher._spot_cache = _retry(lambda: ak.stock_zh_a_spot_em(), ma=3, dl=2)
+            DataFetcher._spot_cache_time = now
+        df = DataFetcher._spot_cache
         match = df[df["\u4ee3\u7801"] == symbol]
         if match.empty:
             raise ValueError(f"{symbol} 实时数据不存在")

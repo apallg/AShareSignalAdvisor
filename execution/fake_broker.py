@@ -48,8 +48,6 @@ class FakeBroker(BaseBroker):
     def account_id(self):
         return self._account_id
 
-    # ─── 下单 ────────────────────────────────
-
     def place_order(self, symbol, name, side, quantity, price_type, price=None):
         if not self._connected:
             raise RuntimeError("Broker 未连接")
@@ -72,7 +70,6 @@ class FakeBroker(BaseBroker):
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-        # 资金检查
         current_price = self._price_provider(symbol)
         est_cost = (price or current_price) * int(quantity)
         if side == "buy" and est_cost > self._cash - self._frozen:
@@ -82,12 +79,10 @@ class FakeBroker(BaseBroker):
             self._persist_order(order)
             return order_id
 
-        # 市场单立即成交
         if price_type == "market" or price <= 0:
             fill_price = current_price or price
             self._fill_order(order, fill_price)
         else:
-            # 限价单检查是否可立即成交
             if current_price and (
                 (side == "buy" and current_price <= price) or
                 (side == "sell" and current_price >= price)
@@ -102,8 +97,6 @@ class FakeBroker(BaseBroker):
 
         return order_id
 
-    # ─── 撤单 ────────────────────────────────
-
     def cancel_order(self, order_id):
         order = self._orders.get(order_id)
         if not order or order["status"] != STATUS_PENDING:
@@ -115,8 +108,6 @@ class FakeBroker(BaseBroker):
         order["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._persist_order(order)
         return True
-
-    # ─── 查询 ────────────────────────────────
 
     def get_order(self, order_id):
         return self._orders.get(order_id)
@@ -164,7 +155,28 @@ class FakeBroker(BaseBroker):
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-    # ─── 撮合逻辑 ─────────────────────────────
+    def add_cash(self, amount):
+        if amount <= 0:
+            raise ValueError("充值金额必须大于0")
+        self._cash += amount
+        self._save_account()
+        return self.get_account()
+
+    def set_cash(self, amount):
+        if amount < 0:
+            raise ValueError("资金不能为负")
+        self._cash = amount
+        self._save_account()
+        return self.get_account()
+
+    def withdraw_cash(self, amount):
+        if amount <= 0:
+            raise ValueError("出金金额必须大于0")
+        if amount > self._cash - self._frozen:
+            raise ValueError(f"可用资金不足 (可用: {self._cash - self._frozen:.2f})")
+        self._cash -= amount
+        self._save_account()
+        return self.get_account()
 
     def _fill_order(self, order, fill_price):
         qty = order["quantity"]
@@ -211,43 +223,6 @@ class FakeBroker(BaseBroker):
         }
         self._trades.append(trade)
         self._persist_trade(trade)
-
-    # ─── MySQL 持久化（降级兼容） ─────────────
-
-    def _persist_order(self, order):
-        try:
-            from core.database import Database
-            if not Database.is_available():
-                return
-            Database.execute(
-                "INSERT INTO orders (id,symbol,name,side,quantity,price_type,price,"
-                "filled_qty,filled_price,status,created_at,updated_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
-                "ON DUPLICATE KEY UPDATE filled_qty=VALUES(filled_qty),"
-                "filled_price=VALUES(filled_price),status=VALUES(status),"
-                "updated_at=VALUES(updated_at)",
-                (order["id"], order["symbol"], order["name"], order["side"],
-                 order["quantity"], order["price_type"], order["price"],
-                 order["filled_qty"], order["filled_price"], order["status"],
-                 order["created_at"], order["updated_at"]))
-        except Exception as e:
-            logger.debug(f"order持久化跳过: {e}")
-
-    def _persist_trade(self, trade):
-        try:
-            from core.database import Database
-            if not Database.is_available():
-                return
-            Database.execute(
-                "INSERT INTO trades (id,order_id,symbol,name,side,price,quantity,"
-                "amount,commission,stamp_duty,trade_time) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                (trade["id"], trade["order_id"], trade["symbol"], trade["name"],
-                 trade["side"], trade["price"], trade["quantity"],
-                 trade["amount"], trade["commission"], trade["stamp_duty"],
-                 trade["trade_time"]))
-        except Exception as e:
-            logger.debug(f"trade持久化跳过: {e}")
 
     def _save_account(self):
         try:

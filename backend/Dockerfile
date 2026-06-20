@@ -14,6 +14,8 @@ COPY strategies/ strategies/
 COPY nlp/ nlp/
 COPY agents/ agents/
 COPY utils/ utils/
+COPY execution/ execution/
+COPY db/ db/
 COPY config.py .
 
 EXPOSE 8000

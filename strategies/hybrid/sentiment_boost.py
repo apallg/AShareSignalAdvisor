@@ -19,3 +19,37 @@ class SentimentBoostStrategy(BaseStrategy):
         if self.position and self.entry_price:
             pct = (self.data.close[0]-self.entry_price)/self.entry_price*100
             if pct <= self.p.stop_loss: self.sell_signal(reason=f"止损({pct:.1f}%)")
+
+
+# ---- 实盘版本 ----
+import numpy as np
+from execution.live.base import LiveStrategy
+
+
+class LiveSentimentBoost(LiveStrategy):
+    name = "情绪仓位增强"
+    description = "金叉买入时根据情绪因子调整仓位，死叉卖出"
+    params = {"fast": 5, "slow": 20, "stop_loss": -8}
+
+    def check_signal(self, df):
+        if len(df) < self.slow + 2:
+            return {"action": "hold", "size_ratio": 0, "reason": ""}
+        close = df["close"]
+        price = float(close.values[-1])
+        fast_ma = close.rolling(self.fast).mean().values
+        slow_ma = close.rolling(self.slow).mean().values
+        curr_fast, prev_fast = fast_ma[-1], fast_ma[-2]
+        curr_slow, prev_slow = slow_ma[-1], slow_ma[-2]
+        sent = float(df["sentiment"].values[-1]) if "sentiment" in df.columns and not np.isnan(df["sentiment"].values[-1]) else 0
+        boost = max(0.3, min(1.5, 1.0 + sent * 0.5))
+
+        if self.position == 0:
+            if prev_fast <= prev_slow and curr_fast > curr_slow:
+                return {"action": "buy", "size_ratio": boost, "reason": f"金叉+情绪乘数{boost:.1f}"}
+        else:
+            pnl_pct = (price - self.entry_price) / self.entry_price * 100
+            if pnl_pct <= self.stop_loss:
+                return {"action": "sell", "size_ratio": 1.0, "reason": f"止损({pnl_pct:.1f}%)"}
+            if prev_fast >= prev_slow and curr_fast < curr_slow:
+                return {"action": "sell", "size_ratio": 1.0, "reason": "死叉卖出"}
+        return {"action": "hold", "size_ratio": 0, "reason": ""}

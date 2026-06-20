@@ -11,6 +11,9 @@ const routes = [
   { path: '/backtest', name: 'backtest', component: () => import('../views/BacktestView.vue') },
   { path: '/lab', name: 'lab', component: () => import('../views/StrategyLab.vue') },
   { path: '/sentiment', name: 'sentiment', component: () => import('../views/SentimentView.vue') },
+  { path: '/trading', name: 'trading', component: () => import('../views/TradingView.vue') },
+  { path: '/live', name: 'live', component: () => import('../views/LiveTradingView.vue') },
+  { path: '/editor', name: 'editor', component: () => import('../views/StrategyEditor.vue') },
 ]
 
 const router = createRouter({

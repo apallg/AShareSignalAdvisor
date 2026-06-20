@@ -36,6 +36,7 @@ services:
       COZE_API_TOKEN: ${COZE_API_TOKEN}
       COZE_BOT_ID: ${COZE_BOT_ID}
       COZE_WORKFLOW_ID: ${COZE_WORKFLOW_ID}
+      STRATEGIES_HOST_DIR: ${STRATEGIES_HOST_DIR:-/app/strategies}
     depends_on:
       mysql:
         condition: service_healthy
@@ -47,6 +48,8 @@ services:
       - ./nlp:/app/nlp
       - ./agents:/app/agents
       - ./utils:/app/utils
+      - ./execution:/app/execution
+      - ./db:/app/db
       - ./config.py:/app/config.py
       - cache_data:/app/cache
       - data_data:/app/data
