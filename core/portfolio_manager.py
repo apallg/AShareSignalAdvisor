@@ -10,7 +10,7 @@ from core.realtime import RealtimeEngine
 from agents.panel import DebatePanel
 from utils.cache_manager import CacheManager
 from utils.llm_client import LLMClient
-from utils.notifier import send_risk_alert, get_notifier
+from utils.notifier import send_risk_alert
  
 logger = logging.getLogger(__name__)
  

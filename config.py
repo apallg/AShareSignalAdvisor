@@ -29,11 +29,14 @@ QWEN_API_KEY = os.getenv("QWEN_API_KEY", "")
 QWEN_BASE_URL = os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen-turbo")
 
-# Coze 通知 (第二期)
+# Coze 通知 (第二期，备用)
 COZE_API_TOKEN = os.getenv("COZE_API_TOKEN", "")
 COZE_BASE_URL = os.getenv("COZE_BASE_URL", "https://api.coze.cn")
 COZE_BOT_ID = os.getenv("COZE_BOT_ID", "")
 COZE_WORKFLOW_ID = os.getenv("COZE_WORKFLOW_ID", "")
+
+# 企业微信机器人通知 (主用)
+WECOM_BOT_KEY = os.getenv("WECOM_BOT_KEY", "")
 
 # 缓存有效期 (秒)
 CACHE_EXPIRE_DATA = 3600        # 行情数据 1 小时
