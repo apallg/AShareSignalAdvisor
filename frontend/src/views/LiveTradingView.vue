@@ -68,11 +68,11 @@
     </div>
 
     <!-- 账户总览 -->
-    <div class="grid-4 mb-2" v-if="account.cash">
-      <MetricCard value="¥{{ Number(account.cash || 0).toFixed(2) }}" label="现金" />
-      <MetricCard value="¥{{ Number(account.market_value || 0).toFixed(2) }}" label="持仓市值" />
-      <MetricCard value="¥{{ Number(account.total_assets || 0).toFixed(2) }}" label="总资产" />
-      <MetricCard value="¥{{ Number(account.unrealized_pnl || 0).toFixed(2) }}" label="浮动盈亏" :color="(account.unrealized_pnl || 0) >= 0 ? 'up' : 'down'" />
+    <div class="grid-4 mb-2" v-if="account.available">
+      <MetricCard :value="'¥' + Number(account.available || 0).toFixed(2)" label="可用资金" />
+      <MetricCard :value="'¥' + Number(account.market_value || 0).toFixed(2)" label="持仓市值" />
+      <MetricCard :value="'¥' + Number(account.total_assets || 0).toFixed(2)" label="总资产" />
+      <MetricCard :value="'¥' + Number(account.unrealized_pnl || 0).toFixed(2)" label="未实现盈亏" :color="(account.unrealized_pnl || 0) >= 0 ? 'up' : 'down'" />
     </div>
 
     <!-- 信号日志 -->
