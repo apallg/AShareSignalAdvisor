@@ -91,7 +91,7 @@ class TradingDayScheduler:
         from core.portfolio_manager import PortfolioScanner
         try:
             scanner = PortfolioScanner()
-            results = scanner.scan_all(threshold=self.default_threshold)
+            results = scanner.scan_all(threshold=self.default_threshold, include={"financial": False})
             self.last_scan = datetime.datetime.now().isoformat()
             self.last_result = f"{session_name}: {len(results)}条风险"
             logger.info(f"定时扫描 [{session_name}] 完成: {len(results)}条风险")
