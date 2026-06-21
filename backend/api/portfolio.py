@@ -1,18 +1,8 @@
-"""持仓管理 + 风险扫描 API"""
-from typing import Optional, Dict
+"""持仓管理 API"""
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
-
-# 前端数据源勾选 → 后端 include 字段映射
-_FRONTEND_INCLUDE_MAP = {
-    "tech": "technical",
-    "fundamental": "financial",
-    "capital": "capital_flow",
-    "news": "sentiment",
-    "market": "market_env",
-}
 
 
 class HoldingCreate(BaseModel):
@@ -46,15 +36,3 @@ def delete_holding(code: str):
     from core.database import HoldingsRepo
     HoldingsRepo.delete(code)
     return {"status": "ok"}
-
-
-@router.post("/scan")
-def scan_portfolio(threshold: int = 5, include: Optional[Dict[str, bool]] = None):
-    """批量风险扫描"""
-    from core.portfolio_manager import PortfolioScanner
-    # 翻译前端 key → 后端 key
-    if include:
-        include = {_FRONTEND_INCLUDE_MAP.get(k, k): v for k, v in include.items()}
-    scanner = PortfolioScanner()
-    alerts = scanner.scan_all(threshold=threshold, include=include)
-    return {"data": alerts}

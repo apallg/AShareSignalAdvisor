@@ -6,7 +6,6 @@ const routes = [
   { path: '/stock', name: 'stock', component: () => import('../views/StockView.vue') },
   { path: '/sectors', name: 'sectors', component: () => import('../views/SectorView.vue') },
   { path: '/portfolio', name: 'portfolio', component: () => import('../views/PortfolioView.vue') },
-  { path: '/scan', name: 'scan', component: () => import('../views/ScanView.vue') },
   { path: '/alerts', name: 'alerts', component: () => import('../views/AlertView.vue') },
   { path: '/backtest', name: 'backtest', component: () => import('../views/BacktestView.vue') },
   { path: '/lab', name: 'lab', component: () => import('../views/StrategyLab.vue') },

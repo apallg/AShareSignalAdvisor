@@ -24,9 +24,13 @@
         持仓扫描
         <span style="font-weight:normal;font-size:12px;color:#999;margin-left:8px;">{{ holdings.length }} 只</span>
       </div>
-      <div class="flex mb-2" style="gap:8px;align-items:center;">
-        <label style="font-size:12px;">阈值</label>
-        <select v-model.number="scanThreshold" style="width:80px;">
+      <div class="flex mb-2" style="gap:12px;align-items:center;flex-wrap:wrap;">
+        <label style="font-size:11px;"><input type="checkbox" v-model="include.technical" /> 技术指标</label>
+        <label style="font-size:11px;"><input type="checkbox" v-model="include.financial" /> 财务指标</label>
+        <label style="font-size:11px;"><input type="checkbox" v-model="include.patterns" /> K线形态</label>
+        <label style="font-size:11px;"><input type="checkbox" v-model="include.realtime" /> 实时行情</label>
+        <span style="font-size:11px;color:#999;">日K线(必选)</span>
+        <select v-model.number="scanThreshold" style="width:80px;margin-left:auto;">
           <option :value="0">全部</option>
           <option :value="5">≥5</option>
           <option :value="7">≥7</option>
@@ -34,11 +38,10 @@
         <button class="btn" style="padding:6px 16px;font-size:12px;background:#27ae60;" @click="batchScan" :disabled="scanning">
           {{ scanning ? '批量扫描中...' : '批量扫描' }}
         </button>
-        <span v-if="scanning" style="font-size:12px;color:#999;">{{ scanProgress }}</span>
       </div>
       <table>
         <tr><th>代码</th><th>名称</th><th>持股</th><th>成本</th><th>告警</th><th>最近风险</th><th>操作</th></tr>
-        <tr v-for="h in holdings" :key="h.code" :class="scannedCodes[h.code] && scannedCodes[h.code].risk_level">
+        <tr v-for="h in holdings" :key="h.code">
           <td>{{ h.code }}</td>
           <td>{{ h.name }}</td>
           <td>{{ h.shares }}</td>
@@ -90,7 +93,7 @@
   </div>
 </template>
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import api from '../api/index.js'
 import MetricCard from '../components/MetricCard.vue'
 import DataTable from '../components/DataTable.vue'
@@ -107,7 +110,12 @@ const msg = ref('')
 const testing = ref(false)
 const scanning = ref(false)
 const singleScanning = ref('')
-const scanProgress = ref('')
+const include = reactive({
+  technical: true,
+  financial: true,
+  patterns: true,
+  realtime: true,
+})
 
 const columns = [
   { key: 'stock_name', label: '股票' },
@@ -144,10 +152,21 @@ async function testNotify() {
   testing.value = false
 }
 
+function getScanParams() {
+  const params = {}
+  for (const [k, v] of Object.entries(include)) {
+    if (!v) params[k] = false
+  }
+  return Object.keys(params).length ? params : null
+}
+
 async function scanOne(code) {
   singleScanning.value = code; msg.value = ''; error.value = ''
   try {
-    const r = await api.post(`/alerts/scan/${code}?threshold=0`)
+    const payload = { threshold: 0 }
+    const inc = getScanParams()
+    if (inc) payload.include = inc
+    const r = await api.post(`/alerts/scan/${code}`, payload)
     if (r.data) {
       scannedCodes.value[code] = r.data
     }
@@ -158,17 +177,18 @@ async function scanOne(code) {
 
 async function batchScan() {
   scanning.value = true; msg.value = ''; error.value = ''
-  scanProgress.value = `准备扫描 ${holdings.value.length} 只...`
   try {
-    const r = await api.post(`/alerts/scan?threshold=${scanThreshold.value}`)
+    const payload = { threshold: scanThreshold.value }
+    const inc = getScanParams()
+    if (inc) payload.include = inc
+    const r = await api.post('/alerts/scan', payload)
     const results = r.data?.results || []
     for (const item of results) {
       scannedCodes.value[item.stock_code] = item
     }
-    scanProgress.value = ''
     msg.value = `扫描完成，发现 ${r.data?.count || 0} 条风险记录`
     await loadData()
-  } catch (e) { error.value = e.message; scanProgress.value = '' }
+  } catch (e) { error.value = e.message }
   scanning.value = false
 }
 

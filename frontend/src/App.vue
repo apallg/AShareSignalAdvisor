@@ -66,7 +66,6 @@ const navItems = [
   { label: '交易风控', icon: '💰', children: [
     { path: '/trading', label: '交易面板', icon: '' },
     { path: '/portfolio', label: '持仓管理', icon: '' },
-    { path: '/scan', label: '批量风险扫描', icon: '' },
     { path: '/alerts', label: '风险告警', icon: '' },
   ]},
 ]
