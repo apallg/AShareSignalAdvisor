@@ -35,23 +35,26 @@ app.include_router(strategies.router, prefix="/api/strategies", tags=["策略管
 app.include_router(scheduler_api.router, prefix="/api/scheduler", tags=["定时扫描"])
 
 import time
+import threading
 
-@app.on_event("startup")
-def startup():
+def _init_database():
     for attempt in range(30):
         try:
             from core.database import Database
             if Database.is_available():
                 Database.create_tables()
                 logger.info(f"数据库表已就绪 (第{attempt+1}次尝试)")
-                break
+                return
             else:
                 logger.info(f"数据库未启用 (第{attempt+1}次尝试)")
         except Exception as e:
             logger.warning(f"数据库连接中... (第{attempt+1}次: {e})")
         time.sleep(2)
-    else:
-        logger.warning("数据库初始化已跳过")
+    logger.warning("数据库初始化已跳过")
+
+@app.on_event("startup")
+def startup():
+    threading.Thread(target=_init_database, daemon=True).start()
     from core.scheduler import get_scheduler
     get_scheduler().start()
 

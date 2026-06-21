@@ -10,39 +10,37 @@
       <MetricCard :value="stats.low" label="低风险" color="down" />
     </div>
 
-    <div class="flex mb-2" style="gap:12px;align-items:center;">
+    <div class="flex mb-2 channel-bar">
       <span v-if="channels.wecom" class="tag tag-low">企业微信</span>
       <span v-if="channels.coze" class="tag tag-mid">Coze</span>
-      <span v-if="!channels.wecom && !channels.coze" style="font-size:12px;color:#e94560;">通知通道未配置</span>
-      <button class="btn" style="margin-left:auto;padding:6px 16px;font-size:12px;" @click="testNotify" :disabled="testing">
+      <span v-if="!channels.wecom && !channels.coze" class="no-channel">通知通道未配置</span>
+      <button class="btn btn-test" @click="testNotify" :disabled="testing">
         {{ testing ? '发送中...' : '测试通知' }}
       </button>
     </div>
 
-    <div class="card mb-2" style="padding:12px 16px;">
-      <div class="flex" style="align-items:center;gap:12px;">
+    <div class="card sched-card">
+      <div class="flex sched-top">
         <span :class="['dot', sched.running ? 'dot-on' : 'dot-off']"></span>
-        <span style="font-weight:600;">定时扫描</span>
+        <span class="sched-title">定时扫描</span>
         <span v-if="sched.running" class="tag tag-low">运行中</span>
         <span v-else class="tag tag-high">已停止</span>
-        <span style="font-size:11px;color:#999;">
-          早盘 {{ sched.morning_time }} | 尾盘 {{ sched.afternoon_time }} | 阈值 {{ sched.default_threshold }}
-        </span>
-        <div style="margin-left:auto;display:flex;gap:8px;">
-          <button v-if="!sched.running" class="btn" style="padding:4px 12px;font-size:11px;background:#27ae60;" @click="schedStart">启动</button>
-          <button v-if="sched.running" class="btn" style="padding:4px 12px;font-size:11px;background:#e94560;" @click="schedStop">停止</button>
-          <button class="btn" style="padding:4px 12px;font-size:11px;" @click="schedTrigger" :disabled="schedTriggering">
+        <span class="sched-config">早盘 {{ sched.morning_time }} | 尾盘 {{ sched.afternoon_time }} | 阈值 {{ sched.default_threshold }}</span>
+        <div class="sched-actions">
+          <button v-if="!sched.running" class="btn btn-sched-start" @click="schedStart">启动</button>
+          <button v-if="sched.running" class="btn btn-sched-stop" @click="schedStop">停止</button>
+          <button class="btn btn-sched-scan" @click="schedTrigger" :disabled="schedTriggering">
             {{ schedTriggering ? '扫描中...' : '立即扫描' }}
           </button>
         </div>
       </div>
-      <div v-if="sched.next_morning || sched.next_afternoon" style="margin-top:8px;font-size:11px;color:#999;">
+      <div v-if="sched.next_morning || sched.next_afternoon" class="sched-next">
         下次扫描:
         <span v-if="sched.next_morning">早盘 {{ fmtTime(sched.next_morning) }}</span>
         <span v-if="sched.next_morning && sched.next_afternoon"> | </span>
         <span v-if="sched.next_afternoon">尾盘 {{ fmtTime(sched.next_afternoon) }}</span>
       </div>
-      <div v-if="sched.last_scan" style="margin-top:4px;font-size:11px;color:#999;">
+      <div v-if="sched.last_scan" class="sched-last">
         最近扫描: {{ fmtTime(sched.last_scan) }} — {{ sched.last_result }}
       </div>
     </div>
@@ -50,20 +48,20 @@
     <div class="card" v-if="holdings.length">
       <div class="card-title">
         持仓扫描
-        <span style="font-weight:normal;font-size:12px;color:#999;margin-left:8px;">{{ holdings.length }} 只</span>
+        <span class="sub-title">{{ holdings.length }} 只</span>
       </div>
-      <div class="flex mb-2" style="gap:12px;align-items:center;flex-wrap:wrap;">
-        <label style="font-size:11px;"><input type="checkbox" v-model="include.technical" /> 技术指标</label>
-        <label style="font-size:11px;"><input type="checkbox" v-model="include.financial" /> 财务指标</label>
-        <label style="font-size:11px;"><input type="checkbox" v-model="include.patterns" /> K线形态</label>
-        <label style="font-size:11px;"><input type="checkbox" v-model="include.realtime" /> 实时行情</label>
-        <span style="font-size:11px;color:#999;">日K线(必选)</span>
-        <select v-model.number="scanThreshold" style="width:80px;margin-left:auto;">
+      <div class="flex scan-controls">
+        <label class="cb"><input type="checkbox" v-model="include.technical" /> 技术指标</label>
+        <label class="cb"><input type="checkbox" v-model="include.financial" /> 财务指标</label>
+        <label class="cb"><input type="checkbox" v-model="include.patterns" /> K线形态</label>
+        <label class="cb"><input type="checkbox" v-model="include.realtime" /> 实时行情</label>
+        <span class="cb-note">日K线(必选)</span>
+        <select v-model.number="scanThreshold" class="sel-threshold">
           <option :value="0">全部</option>
           <option :value="5">≥5</option>
           <option :value="7">≥7</option>
         </select>
-        <button class="btn" style="padding:6px 16px;font-size:12px;background:#27ae60;" @click="batchScan" :disabled="scanning">
+        <button class="btn btn-batch-scan" @click="batchScan" :disabled="scanning">
           {{ scanning ? '批量扫描中...' : '批量扫描' }}
         </button>
       </div>
@@ -76,21 +74,20 @@
             <td>{{ h.shares }}</td>
             <td>{{ Number(h.cost_price).toFixed(2) }}</td>
             <td>
-              <select v-model.number="h.risk_threshold" @change="updateThreshold(h)" style="width:52px;font-size:11px;padding:2px;">
+              <select v-model.number="h.risk_threshold" @change="updateThreshold(h)" class="sel-h-threshold">
                 <option v-for="n in 10" :key="n" :value="n">{{ n }}</option>
               </select>
             </td>
             <td>
               <span v-if="scannedCodes[h.code]"
-                :class="['tag', riskTagClass(scannedCodes[h.code].risk_level)]"
-                style="cursor:pointer;"
+                :class="['tag', 'tag-clickable', riskTagClass(scannedCodes[h.code].risk_level)]"
                 @click="toggleDetail(h.code)">
                 {{ scannedCodes[h.code].risk_level }} {{ scannedCodes[h.code].risk_score }}/10
               </span>
-              <span v-else style="color:#999;">--</span>
+              <span v-else class="text-muted">--</span>
             </td>
             <td>
-              <button class="btn" style="padding:4px 12px;font-size:11px;" @click="scanOne(h.code)" :disabled="singleScanning === h.code">
+              <button class="btn btn-scan-one" @click="scanOne(h.code)" :disabled="singleScanning === h.code">
                 {{ singleScanning === h.code ? '扫描中...' : '扫描' }}
               </button>
             </td>
@@ -100,7 +97,7 @@
               <div class="scan-detail">
                 <div class="detail-header">
                   <span>{{ scannedCodes[h.code].stock_name }}({{ h.code }}) 风险详情</span>
-                  <button class="btn" style="padding:2px 8px;font-size:11px;" @click="expanded = ''">收起</button>
+                  <button class="btn btn-collapse" @click="expanded = ''">收起</button>
                 </div>
                 <div class="detail-grid">
                   <div>
@@ -117,7 +114,7 @@
                   </div>
                   <div>
                     <div class="detail-label">盈亏</div>
-                    <div class="detail-value" :style="{color: scannedCodes[h.code].profit_loss >= 0 ? '#27ae60' : '#e94560'}">
+                    <div class="detail-value" :class="scannedCodes[h.code].profit_loss >= 0 ? 'profit-up' : 'profit-down'">
                       {{ scannedCodes[h.code].profit_loss?.toFixed(2) || '--' }}
                       ({{ scannedCodes[h.code].profit_loss_pct?.toFixed(2) || '--' }}%)
                     </div>
@@ -129,9 +126,9 @@
                 </div>
                 <div class="detail-section">
                   <div class="detail-label">分析详情</div>
-                  <div class="detail-text" style="white-space:pre-wrap;max-height:400px;overflow-y:auto;">{{ scannedCodes[h.code].risk_detail }}</div>
+                  <div class="detail-text detail-text-scroll">{{ scannedCodes[h.code].risk_detail }}</div>
                 </div>
-                <div v-if="scannedCodes[h.code].data_enabled" style="font-size:11px;color:#999;margin-top:8px;">
+                <div v-if="scannedCodes[h.code].data_enabled" class="detail-sources">
                   数据源: {{ scannedCodes[h.code].data_enabled.join('、') }}
                   <span v-if="scannedCodes[h.code].data_skipped?.length"> | 跳过: {{ scannedCodes[h.code].data_skipped.join('、') }}</span>
                 </div>
@@ -143,7 +140,7 @@
     </div>
     <div v-else class="card empty">暂无持仓，请先在持仓管理中添加股票</div>
 
-    <div class="flex mb-2" style="gap:12px;align-items:center;margin-top:16px;">
+    <div class="flex filter-bar">
       <select v-model="levelFilter">
         <option value="">全部等级</option>
         <option value="高风险">高风险</option>
@@ -160,14 +157,14 @@
     >
       <template #cell-stock_name="{ row }">{{ row.stock_name }}({{ row.stock_code }})</template>
       <template #cell-risk_level="{ value }">
-        <span :class="['tag', value==='高风险'?'tag-high':value==='中风险'?'tag-mid':'tag-low']">{{ value }}</span>
+        <span :class="['tag', riskTagClass(value)]">{{ value }}</span>
       </template>
       <template #cell-risk_score="{ value }">{{ value }}/10</template>
       <template #cell-risk_detail="{ value }">
-        <span style="font-size:12px;display:block;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="value">{{ value?.slice(0, 80) }}</span>
+        <span class="risk-detail-cell" :title="value">{{ value?.slice(0, 80) }}</span>
       </template>
       <template #cell-created_at="{ value }">
-        <span style="white-space:nowrap">{{ value?.slice(0,16) || '--' }}</span>
+        <span class="nowrap">{{ value?.slice(0,16) || '--' }}</span>
       </template>
     </DataTable>
   </div>
@@ -177,6 +174,8 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import api from '../api/index.js'
 import MetricCard from '../components/MetricCard.vue'
 import DataTable from '../components/DataTable.vue'
+
+const SCANNED_MAX = 200
 
 const alerts = ref([])
 const stats = ref({ high: 0, mid: 0, low: 0 })
@@ -210,27 +209,34 @@ const filtered = computed(() =>
   !levelFilter.value ? alerts.value : alerts.value.filter(a => a.risk_level === levelFilter.value)
 )
 
+const RISK_TAGS = { '高风险': 'tag-high', '中风险': 'tag-mid', '低风险': 'tag-low' }
+
 function riskTagClass(level) {
-  return level === '高风险' ? 'tag-high' : level === '中风险' ? 'tag-mid' : 'tag-low'
+  return RISK_TAGS[level] || 'tag-low'
 }
 
 function toggleDetail(code) {
   expanded.value = expanded.value === code ? '' : code
 }
 
+function _capScanned() {
+  const keys = Object.keys(scannedCodes.value)
+  if (keys.length > SCANNED_MAX) {
+    const toRemove = keys.slice(0, keys.length - SCANNED_MAX)
+    for (const k of toRemove) {
+      delete scannedCodes.value[k]
+    }
+  }
+}
+
 async function updateThreshold(h) {
-  try {
-    await api.put(`/portfolio/holdings/${h.code}`, { risk_threshold: h.risk_threshold })
-  } catch (e) { /* 忽略 */ }
+  try { await api.put(`/portfolio/holdings/${h.code}`, { risk_threshold: h.risk_threshold }) } catch (e) { /* 忽略 */ }
 }
 
 async function loadHoldings() {
   try {
     const r = await api.get('/portfolio/holdings')
-    holdings.value = (r.data || []).map(h => ({
-      ...h,
-      risk_threshold: h.risk_threshold || 7,
-    }))
+    holdings.value = (r.data || []).map(h => ({ ...h, risk_threshold: h.risk_threshold || 7 }))
   } catch (e) { /* 忽略 */ }
 }
 
@@ -267,6 +273,7 @@ async function scanOne(code) {
     const r = await api.post(`/alerts/scan/${code}`, payload)
     if (r.data) {
       scannedCodes.value[code] = r.data
+      _capScanned()
       expanded.value = code
     }
     await loadData()
@@ -285,6 +292,7 @@ async function batchScan() {
     for (const item of results) {
       scannedCodes.value[item.stock_code] = item
     }
+    _capScanned()
     msg.value = `扫描完成，发现 ${r.data?.count || 0} 条风险记录`
     await loadData()
   } catch (e) { error.value = e.message }
@@ -314,6 +322,7 @@ const sched = reactive({
 })
 const schedTriggering = ref(false)
 let schedTimer = null
+let _schedRunning = null
 
 function fmtTime(s) {
   if (!s) return '--'
@@ -323,7 +332,15 @@ function fmtTime(s) {
 async function loadSchedStatus() {
   try {
     const r = await api.get('/scheduler/status')
-    if (r.data) Object.assign(sched, r.data)
+    if (r.data) {
+      const wasRunning = _schedRunning
+      _schedRunning = r.data.running
+      Object.assign(sched, r.data)
+      if (!wasRunning && r.data.running) {
+        // scheduler just started — pull fresh data too
+        await loadData()
+      }
+    }
   } catch (e) { /* 忽略 */ }
 }
 
@@ -338,7 +355,6 @@ async function schedTrigger() {
   try {
     await api.post('/scheduler/trigger')
     await loadSchedStatus()
-    await loadData()
     msg.value = '手动扫描已触发，请等待完成...'
     setTimeout(async () => { await loadSchedStatus(); await loadData(); msg.value = '' }, 30000)
   } catch (e) { error.value = e.message }
@@ -354,52 +370,66 @@ onUnmounted(() => {
 })
 </script>
 <style scoped>
-.dot {
-  width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+/* channel bar */
+.channel-bar { gap: 12px; align-items: center; }
+.no-channel { font-size: 12px; color: #e94560; }
+.btn-test { margin-left: auto; padding: 6px 16px; font-size: 12px; }
+
+/* scheduler card */
+.sched-card { padding: 12px 16px; }
+.sched-top { align-items: center; gap: 12px; }
+.sched-title { font-weight: 600; }
+.sched-config { font-size: 11px; color: #999; }
+.sched-actions { margin-left: auto; display: flex; gap: 8px; }
+.btn-sched-start { padding: 4px 12px; font-size: 11px; background: #27ae60; }
+.btn-sched-stop { padding: 4px 12px; font-size: 11px; background: #e94560; }
+.btn-sched-scan { padding: 4px 12px; font-size: 11px; }
+.sched-next { margin-top: 8px; font-size: 11px; color: #999; }
+.sched-last { margin-top: 4px; font-size: 11px; color: #999; }
+
+/* scan controls */
+.sub-title { font-weight: normal; font-size: 12px; color: #999; margin-left: 8px; }
+.scan-controls { gap: 12px; align-items: center; flex-wrap: wrap; }
+.cb { font-size: 11px; }
+.cb-note { font-size: 11px; color: #999; }
+.sel-threshold { width: 80px; margin-left: auto; }
+.sel-h-threshold { width: 52px; font-size: 11px; padding: 2px; }
+.btn-batch-scan { padding: 6px 16px; font-size: 12px; background: #27ae60; }
+.btn-scan-one { padding: 4px 12px; font-size: 11px; }
+.btn-collapse { padding: 2px 8px; font-size: 11px; }
+.tag-clickable { cursor: pointer; }
+.text-muted { color: #999; }
+
+/* filter */
+.filter-bar { gap: 12px; align-items: center; margin-top: 16px; }
+
+/* risk detail cell */
+.risk-detail-cell {
+  font-size: 12px; display: block; max-width: 300px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.nowrap { white-space: nowrap; }
+.profit-up { color: #27ae60; }
+.profit-down { color: #e94560; }
+
+/* detail row */
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .dot-on { background: #27ae60; }
 .dot-off { background: #e94560; }
-.detail-row td {
-  padding: 0;
-  background: #0f1825;
-}
-.scan-detail {
-  padding: 16px 20px;
-  border-top: 1px solid #1e2d3d;
-}
+.detail-row td { padding: 0; background: #0f1825; }
+.scan-detail { padding: 16px 20px; border-top: 1px solid #1e2d3d; }
 .detail-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  font-weight: 600;
-  font-size: 14px;
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px; font-weight: 600; font-size: 14px;
 }
-.detail-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.detail-label {
-  font-size: 11px;
-  color: #999;
-  margin-bottom: 2px;
-}
-.detail-value {
-  font-size: 14px;
-  font-weight: 600;
-}
-.detail-section {
-  margin-top: 10px;
-}
+.detail-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
+.detail-label { font-size: 11px; color: #999; margin-bottom: 2px; }
+.detail-value { font-size: 14px; font-weight: 600; }
+.detail-section { margin-top: 10px; }
 .detail-text {
-  font-size: 12px;
-  color: #ccc;
-  margin-top: 4px;
-  line-height: 1.6;
-  background: #060d15;
-  padding: 10px 14px;
-  border-radius: 6px;
+  font-size: 12px; color: #ccc; margin-top: 4px;
+  line-height: 1.6; background: #060d15; padding: 10px 14px; border-radius: 6px;
 }
+.detail-text-scroll { white-space: pre-wrap; max-height: 400px; overflow-y: auto; }
+.detail-sources { font-size: 11px; color: #999; margin-top: 8px; }
 </style>

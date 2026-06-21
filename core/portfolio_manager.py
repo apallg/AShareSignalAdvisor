@@ -43,7 +43,6 @@ class PortfolioScanner:
         enabled = []
         skipped = []
 
-        # ─── 日K线（必须） ───────────────────
         if not inc.get("daily", True):
             raise ValueError("日K线不能禁用")
         try:
@@ -54,7 +53,6 @@ class PortfolioScanner:
             raise ValueError("日K线数据为空")
         enabled.append("日K线")
 
-        # ─── 技术指标 ────────────────────────
         sig = []
         if inc.get("technical", True):
             try:
@@ -66,7 +64,6 @@ class PortfolioScanner:
         else:
             skipped.append("技术指标")
 
-        # ─── 财务指标 ────────────────────────
         financial = None
         if inc.get("financial", True):
             financial = self.fetcher.get_stock_financial(code)
@@ -76,7 +73,6 @@ class PortfolioScanner:
         else:
             skipped.append("财务指标")
 
-        # ─── 实时行情 ────────────────────────
         quote = None
         if inc.get("realtime", True):
             quote = self.realtime.get_realtime_price(code)
@@ -88,7 +84,6 @@ class PortfolioScanner:
         else:
             skipped.append("实时行情")
 
-        # ─── K线形态 ─────────────────────────
         patterns = []
         if inc.get("patterns", True):
             try:
@@ -100,8 +95,6 @@ class PortfolioScanner:
         else:
             skipped.append("K线形态")
 
-        # ─── 构建上下文 ─────────────────────
-        # 指标已在上面通过 add_indicators 添加，跳过重复计算
         data_context = self.analyzer.get_analysis_context(df, financial or {}, indicators_added=True)
         data_context += f"\n\n股票名称: {name}\n股票代码: {code}"
         data_context += f"\n启用数据源: {', '.join(enabled)}"
@@ -120,7 +113,6 @@ class PortfolioScanner:
             for pn, pd in patterns[:5]:
                 data_context += f"- {pn}: {pd}\n"
 
-        # ─── 多 Agent 辩论 ─────────────────
         try:
             debate_result = self.panel.debate(name, code, data_context)
             final = debate_result.get("最终决议", "")
@@ -171,8 +163,8 @@ class PortfolioScanner:
                 result = self.scan_holding(h, include=include)
                 if result and result["risk_score"] >= threshold:
                     alerts.append(result)
-                    self._persist_alert(result)
-                    self._notify_if_needed(result, h)
+                    self.persist_alert(result)
+                    self.notify_if_needed(result, h)
             except Exception as e:
                 logger.error(f"扫描 {h.get('code','?')} 失败: {e}")
         return alerts
@@ -219,7 +211,7 @@ class PortfolioScanner:
             return m.group(1).strip()
         return ""
  
-    def _persist_alert(self, result: Dict):
+    def persist_alert(self, result: Dict):
         """保存告警记录到数据库"""
         try:
             if not Database.is_available():
@@ -235,7 +227,7 @@ class PortfolioScanner:
         except Exception as e:
             logger.error(f"告警持久化失败: {e}")
  
-    def _notify_if_needed(self, result: Dict, holding: Dict):
+    def notify_if_needed(self, result: Dict, holding: Dict):
         """高风险/中风险推送 Coze 通知"""
         threshold = holding.get("risk_threshold", 7)
         if result["risk_score"] >= threshold:

@@ -57,8 +57,8 @@ def scan_single(code: str, threshold: int = Body(0), include: Optional[Dict[str,
         scanner = PortfolioScanner()
         result = scanner.scan_holding(holding, include=include)
         if result and result["risk_score"] >= threshold:
-            scanner._persist_alert(result)
-            scanner._notify_if_needed(result, holding)
+            scanner.persist_alert(result)
+            scanner.notify_if_needed(result, holding)
         return {"data": result}
     except Exception as e:
         raise HTTPException(500, f"扫描 {code} 失败: {e}")

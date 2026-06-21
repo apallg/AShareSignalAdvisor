@@ -12,6 +12,10 @@ MORNING_TIME = getattr(config, "SCAN_MORNING_TIME", "09:35")
 AFTERNOON_TIME = getattr(config, "SCAN_AFTERNOON_TIME", "14:55")
 DEFAULT_THRESHOLD = getattr(config, "SCAN_DEFAULT_THRESHOLD", 7)
 
+SESSION_AM = "早盘"
+SESSION_PM = "尾盘"
+SESSION_MANUAL = "手动"
+
 
 def _parse_time(s):
     h, m = map(int, s.split(":"))
@@ -26,6 +30,8 @@ class TradingDayScheduler:
     def __init__(self):
         self._thread = None
         self._running = False
+        self._morning_t = _parse_time(MORNING_TIME)
+        self._afternoon_t = _parse_time(AFTERNOON_TIME)
         self.morning_time = MORNING_TIME
         self.afternoon_time = AFTERNOON_TIME
         self.default_threshold = DEFAULT_THRESHOLD
@@ -56,33 +62,30 @@ class TradingDayScheduler:
         self._running = True
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-        logger.info(f"交易日定时扫描已启动 早盘{self.morning_time} 尾盘{self.afternoon_time} 阈值{self.default_threshold}")
+        logger.info(f"交易日定时扫描已启动 {SESSION_AM}{self.morning_time} {SESSION_PM}{self.afternoon_time} 阈值{self.default_threshold}")
 
     def stop(self):
         self._running = False
         logger.info("交易日定时扫描已停止")
 
     def trigger(self):
-        """手动触发一次扫描"""
-        t = threading.Thread(target=self._run_scan, args=("手动",), daemon=True)
+        t = threading.Thread(target=self._run_scan, args=(SESSION_MANUAL,), daemon=True)
         t.start()
 
     def _get_next_times(self):
         now = datetime.datetime.now()
         today = now.date()
-        morning_t = _parse_time(self.morning_time)
-        afternoon_t = _parse_time(self.afternoon_time)
 
         d = today
         while True:
             if _is_trading_day(d):
-                m = datetime.datetime.combine(d, morning_t)
-                a = datetime.datetime.combine(d, afternoon_t)
+                m = datetime.datetime.combine(d, self._morning_t)
+                a = datetime.datetime.combine(d, self._afternoon_t)
                 times = []
                 if d > today or now < m:
-                    times.append(("早盘", m))
+                    times.append((SESSION_AM, m))
                 if d > today or now < a:
-                    times.append(("尾盘", a))
+                    times.append((SESSION_PM, a))
                 if times:
                     return times
             d += datetime.timedelta(days=1)
@@ -105,11 +108,17 @@ class TradingDayScheduler:
                 times = self._get_next_times()
                 session_name, next_dt = times[0]
 
+                nm = None
+                na = None
                 for sn, dt in times:
-                    if "早" in sn:
-                        self.next_morning = dt.isoformat()
+                    if sn == SESSION_AM:
+                        nm = dt.isoformat()
                     else:
-                        self.next_afternoon = dt.isoformat()
+                        na = dt.isoformat()
+                if nm != self.next_morning:
+                    self.next_morning = nm
+                if na != self.next_afternoon:
+                    self.next_afternoon = na
 
                 wait = (next_dt - datetime.datetime.now()).total_seconds()
                 logger.info(f"下次定时扫描: {session_name} {next_dt.isoformat()} (等待{wait/60:.0f}分钟)")
