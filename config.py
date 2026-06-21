@@ -64,3 +64,8 @@ BROKER_TYPE = os.getenv("BROKER_TYPE", BROKER_FAKE)
 QMT_USERDATA_DIR = os.getenv("QMT_USERDATA_DIR", "D:\\迅投极速交易终端 睿智融科版\\userdata_mini")
 QMT_ACCOUNT = os.getenv("QMT_ACCOUNT", "")
 QMT_SESSION_ID = int(os.getenv("QMT_SESSION_ID", "123456"))
+
+# 交易日定时扫描
+SCAN_MORNING_TIME = os.getenv("SCAN_MORNING_TIME", "09:35")
+SCAN_AFTERNOON_TIME = os.getenv("SCAN_AFTERNOON_TIME", "14:55")
+SCAN_DEFAULT_THRESHOLD = int(os.getenv("SCAN_DEFAULT_THRESHOLD", "7"))

@@ -19,6 +19,34 @@
       </button>
     </div>
 
+    <div class="card mb-2" style="padding:12px 16px;">
+      <div class="flex" style="align-items:center;gap:12px;">
+        <span :class="['dot', sched.running ? 'dot-on' : 'dot-off']"></span>
+        <span style="font-weight:600;">定时扫描</span>
+        <span v-if="sched.running" class="tag tag-low">运行中</span>
+        <span v-else class="tag tag-high">已停止</span>
+        <span style="font-size:11px;color:#999;">
+          早盘 {{ sched.morning_time }} | 尾盘 {{ sched.afternoon_time }} | 阈值 {{ sched.default_threshold }}
+        </span>
+        <div style="margin-left:auto;display:flex;gap:8px;">
+          <button v-if="!sched.running" class="btn" style="padding:4px 12px;font-size:11px;background:#27ae60;" @click="schedStart">启动</button>
+          <button v-if="sched.running" class="btn" style="padding:4px 12px;font-size:11px;background:#e94560;" @click="schedStop">停止</button>
+          <button class="btn" style="padding:4px 12px;font-size:11px;" @click="schedTrigger" :disabled="schedTriggering">
+            {{ schedTriggering ? '扫描中...' : '立即扫描' }}
+          </button>
+        </div>
+      </div>
+      <div v-if="sched.next_morning || sched.next_afternoon" style="margin-top:8px;font-size:11px;color:#999;">
+        下次扫描:
+        <span v-if="sched.next_morning">早盘 {{ fmtTime(sched.next_morning) }}</span>
+        <span v-if="sched.next_morning && sched.next_afternoon"> | </span>
+        <span v-if="sched.next_afternoon">尾盘 {{ fmtTime(sched.next_afternoon) }}</span>
+      </div>
+      <div v-if="sched.last_scan" style="margin-top:4px;font-size:11px;color:#999;">
+        最近扫描: {{ fmtTime(sched.last_scan) }} — {{ sched.last_result }}
+      </div>
+    </div>
+
     <div class="card" v-if="holdings.length">
       <div class="card-title">
         持仓扫描
@@ -145,7 +173,7 @@
   </div>
 </template>
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import api from '../api/index.js'
 import MetricCard from '../components/MetricCard.vue'
 import DataTable from '../components/DataTable.vue'
@@ -274,9 +302,63 @@ async function loadData() {
   } catch (e) { error.value = e.message }
 }
 
-onMounted(() => { loadHoldings(); loadChannels(); loadData() })
+const sched = reactive({
+  running: false,
+  morning_time: '',
+  afternoon_time: '',
+  default_threshold: 7,
+  last_scan: null,
+  last_result: null,
+  next_morning: null,
+  next_afternoon: null,
+})
+const schedTriggering = ref(false)
+let schedTimer = null
+
+function fmtTime(s) {
+  if (!s) return '--'
+  return s.slice(0, 16).replace('T', ' ')
+}
+
+async function loadSchedStatus() {
+  try {
+    const r = await api.get('/scheduler/status')
+    if (r.data) Object.assign(sched, r.data)
+  } catch (e) { /* 忽略 */ }
+}
+
+async function schedStart() {
+  try { await api.post('/scheduler/start'); await loadSchedStatus() } catch (e) { /* 忽略 */ }
+}
+async function schedStop() {
+  try { await api.post('/scheduler/stop'); await loadSchedStatus() } catch (e) { /* 忽略 */ }
+}
+async function schedTrigger() {
+  schedTriggering.value = true
+  try {
+    await api.post('/scheduler/trigger')
+    await loadSchedStatus()
+    await loadData()
+    msg.value = '手动扫描已触发，请等待完成...'
+    setTimeout(async () => { await loadSchedStatus(); await loadData(); msg.value = '' }, 30000)
+  } catch (e) { error.value = e.message }
+  schedTriggering.value = false
+}
+
+onMounted(() => {
+  loadHoldings(); loadChannels(); loadData(); loadSchedStatus()
+  schedTimer = setInterval(loadSchedStatus, 30000)
+})
+onUnmounted(() => {
+  clearInterval(schedTimer)
+})
 </script>
 <style scoped>
+.dot {
+  width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+}
+.dot-on { background: #27ae60; }
+.dot-off { background: #e94560; }
 .detail-row td {
   padding: 0;
   background: #0f1825;

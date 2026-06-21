@@ -167,13 +167,14 @@ class PortfolioScanner:
         for h in holdings:
             if not h.get("alerts_enabled", True):
                 continue
-            result = self.scan_holding(h, include=include)
-            if result and result["risk_score"] >= threshold:
-                alerts.append(result)
-                # 持久化告警记录
-                self._persist_alert(result)
-                # Coze 通知推送
-                self._notify_if_needed(result, h)
+            try:
+                result = self.scan_holding(h, include=include)
+                if result and result["risk_score"] >= threshold:
+                    alerts.append(result)
+                    self._persist_alert(result)
+                    self._notify_if_needed(result, h)
+            except Exception as e:
+                logger.error(f"扫描 {h.get('code','?')} 失败: {e}")
         return alerts
  
     def _parse_risk(self, text: str):

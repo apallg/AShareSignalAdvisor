@@ -19,7 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from backend.api import stock, market, sectors, portfolio, alerts, backtest, sentiment, news, trading, live_trading, strategies
+from backend.api import stock, market, sectors, portfolio, alerts, backtest, sentiment, news, trading, live_trading, strategies, scheduler as scheduler_api
 
 app.include_router(market.router, prefix="/api/market", tags=["大盘"])
 app.include_router(stock.router, prefix="/api/stock", tags=["个股"])
@@ -32,6 +32,7 @@ app.include_router(news.router, prefix="/api/news", tags=["新闻"])
 app.include_router(trading.router, prefix="/api/trading", tags=["交易"])
 app.include_router(live_trading.router, prefix="/api/live", tags=["实盘"])
 app.include_router(strategies.router, prefix="/api/strategies", tags=["策略管理"])
+app.include_router(scheduler_api.router, prefix="/api/scheduler", tags=["定时扫描"])
 
 import time
 
@@ -43,13 +44,16 @@ def startup():
             if Database.is_available():
                 Database.create_tables()
                 logger.info(f"数据库表已就绪 (第{attempt+1}次尝试)")
-                return
+                break
             else:
                 logger.info(f"数据库未启用 (第{attempt+1}次尝试)")
         except Exception as e:
             logger.warning(f"数据库连接中... (第{attempt+1}次: {e})")
         time.sleep(2)
-    logger.warning("数据库初始化已跳过")
+    else:
+        logger.warning("数据库初始化已跳过")
+    from core.scheduler import get_scheduler
+    get_scheduler().start()
 
 @app.get("/api/health")
 def health():
