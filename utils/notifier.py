@@ -15,7 +15,13 @@ class WeComNotifier:
 
     def __init__(self, key: Optional[str] = None):
         self.key = key or config.WECOM_BOT_KEY
-        self._url = f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={self.key}" if self.key else ""
+        if self.key:
+            if self.key.startswith("http"):
+                self._url = self.key
+            else:
+                self._url = f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={self.key}"
+        else:
+            self._url = ""
 
     @property
     def enabled(self) -> bool:
