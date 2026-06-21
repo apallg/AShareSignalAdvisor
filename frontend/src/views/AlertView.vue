@@ -11,21 +11,62 @@
     </div>
 
     <div class="flex mb-2" style="gap:12px;align-items:center;">
-      <select v-model="levelFilter">
-        <option value="">全部等级</option>
-        <option value="高风险">高风险</option>
-        <option value="中风险">中风险</option>
-        <option value="低风险">低风险</option>
-      </select>
       <span v-if="channels.wecom" class="tag tag-low">企业微信</span>
       <span v-if="channels.coze" class="tag tag-mid">Coze</span>
       <span v-if="!channels.wecom && !channels.coze" style="font-size:12px;color:#e94560;">通知通道未配置</span>
       <button class="btn" style="margin-left:auto;padding:6px 16px;font-size:12px;" @click="testNotify" :disabled="testing">
         {{ testing ? '发送中...' : '测试通知' }}
       </button>
-      <button class="btn" style="padding:6px 16px;font-size:12px;background:#27ae60;" @click="triggerScan" :disabled="scanning">
-        {{ scanning ? '扫描中...' : '立即扫描' }}
-      </button>
+    </div>
+
+    <div class="card" v-if="holdings.length">
+      <div class="card-title">
+        持仓扫描
+        <span style="font-weight:normal;font-size:12px;color:#999;margin-left:8px;">{{ holdings.length }} 只</span>
+      </div>
+      <div class="flex mb-2" style="gap:8px;align-items:center;">
+        <label style="font-size:12px;">阈值</label>
+        <select v-model.number="scanThreshold" style="width:80px;">
+          <option :value="0">全部</option>
+          <option :value="5">≥5</option>
+          <option :value="7">≥7</option>
+        </select>
+        <button class="btn" style="padding:6px 16px;font-size:12px;background:#27ae60;" @click="batchScan" :disabled="scanning">
+          {{ scanning ? '批量扫描中...' : '批量扫描' }}
+        </button>
+        <span v-if="scanning" style="font-size:12px;color:#999;">{{ scanProgress }}</span>
+      </div>
+      <table>
+        <tr><th>代码</th><th>名称</th><th>持股</th><th>成本</th><th>告警</th><th>最近风险</th><th>操作</th></tr>
+        <tr v-for="h in holdings" :key="h.code" :class="scannedCodes[h.code] && scannedCodes[h.code].risk_level">
+          <td>{{ h.code }}</td>
+          <td>{{ h.name }}</td>
+          <td>{{ h.shares }}</td>
+          <td>{{ Number(h.cost_price).toFixed(2) }}</td>
+          <td>{{ h.alerts_enabled ? '开启' : '关闭' }}</td>
+          <td>
+            <span v-if="scannedCodes[h.code]" :class="['tag', scannedCodes[h.code].risk_level === '高风险' ? 'tag-high' : scannedCodes[h.code].risk_level === '中风险' ? 'tag-mid' : 'tag-low']">
+              {{ scannedCodes[h.code].risk_level }} {{ scannedCodes[h.code].risk_score }}/10
+            </span>
+            <span v-else style="color:#999;">--</span>
+          </td>
+          <td>
+            <button class="btn" style="padding:4px 12px;font-size:11px;" @click="scanOne(h.code)" :disabled="singleScanning === h.code">
+              {{ singleScanning === h.code ? '扫描中...' : '扫描' }}
+            </button>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <div v-else class="card empty">暂无持仓，请先在持仓管理中添加股票</div>
+
+    <div class="flex mb-2" style="gap:12px;align-items:center;margin-top:16px;">
+      <select v-model="levelFilter">
+        <option value="">全部等级</option>
+        <option value="高风险">高风险</option>
+        <option value="中风险">中风险</option>
+        <option value="低风险">低风险</option>
+      </select>
     </div>
 
     <DataTable
@@ -39,6 +80,9 @@
         <span :class="['tag', value==='高风险'?'tag-high':value==='中风险'?'tag-mid':'tag-low']">{{ value }}</span>
       </template>
       <template #cell-risk_score="{ value }">{{ value }}/10</template>
+      <template #cell-risk_detail="{ value }">
+        <span style="font-size:12px;display:block;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="value">{{ value?.slice(0, 80) }}</span>
+      </template>
       <template #cell-created_at="{ value }">
         <span style="white-space:nowrap">{{ value?.slice(0,16) || '--' }}</span>
       </template>
@@ -54,22 +98,35 @@ import DataTable from '../components/DataTable.vue'
 const alerts = ref([])
 const stats = ref({ high: 0, mid: 0, low: 0 })
 const channels = ref({ wecom: false, coze: false })
+const holdings = ref([])
+const scannedCodes = ref({})
 const levelFilter = ref('')
+const scanThreshold = ref(5)
 const error = ref('')
 const msg = ref('')
 const testing = ref(false)
 const scanning = ref(false)
+const singleScanning = ref('')
+const scanProgress = ref('')
 
 const columns = [
   { key: 'stock_name', label: '股票' },
   { key: 'risk_level', label: '等级' },
   { key: 'risk_score', label: '评分' },
+  { key: 'risk_detail', label: '详情' },
   { key: 'created_at', label: '时间' },
 ]
 
 const filtered = computed(() =>
   !levelFilter.value ? alerts.value : alerts.value.filter(a => a.risk_level === levelFilter.value)
 )
+
+async function loadHoldings() {
+  try {
+    const r = await api.get('/portfolio/holdings')
+    holdings.value = r.data || []
+  } catch (e) { /* 忽略 */ }
+}
 
 async function loadChannels() {
   try {
@@ -87,13 +144,31 @@ async function testNotify() {
   testing.value = false
 }
 
-async function triggerScan() {
-  scanning.value = true; msg.value = ''; error.value = ''
+async function scanOne(code) {
+  singleScanning.value = code; msg.value = ''; error.value = ''
   try {
-    const r = await api.post('/alerts/scan')
-    msg.value = `扫描完成，发现 ${r.data.count} 条风险记录`
+    const r = await api.post(`/alerts/scan/${code}?threshold=0`)
+    if (r.data) {
+      scannedCodes.value[code] = r.data
+    }
     await loadData()
   } catch (e) { error.value = e.message }
+  singleScanning.value = ''
+}
+
+async function batchScan() {
+  scanning.value = true; msg.value = ''; error.value = ''
+  scanProgress.value = `准备扫描 ${holdings.value.length} 只...`
+  try {
+    const r = await api.post(`/alerts/scan?threshold=${scanThreshold.value}`)
+    const results = r.data?.results || []
+    for (const item of results) {
+      scannedCodes.value[item.stock_code] = item
+    }
+    scanProgress.value = ''
+    msg.value = `扫描完成，发现 ${r.data?.count || 0} 条风险记录`
+    await loadData()
+  } catch (e) { error.value = e.message; scanProgress.value = '' }
   scanning.value = false
 }
 
@@ -108,5 +183,5 @@ async function loadData() {
   } catch (e) { error.value = e.message }
 }
 
-onMounted(() => { loadChannels(); loadData() })
+onMounted(() => { loadHoldings(); loadChannels(); loadData() })
 </script>

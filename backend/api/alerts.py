@@ -1,5 +1,5 @@
 """风险告警 API"""
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
 
@@ -31,30 +31,45 @@ def alert_stats(limit: int = 200):
 
 @router.get("/channels")
 def notification_channels():
-    """查询通知通道状态"""
     from utils.notifier import get_channel_status
     return {"data": get_channel_status()}
 
 
 @router.post("/test")
 def test_notification():
-    """发送测试通知"""
     from utils.notifier import send_test_notification
     result = send_test_notification()
     if "error" in result:
-        from fastapi import HTTPException
         raise HTTPException(400, result["error"])
     return {"data": result}
 
 
 @router.post("/scan")
-def trigger_scan():
-    """手动触发持仓扫描"""
+def trigger_scan(threshold: int = 5):
+    """批量扫描全部持仓"""
+    from core.portfolio_manager import PortfolioScanner
     try:
-        from core.portfolio_manager import PortfolioScanner
         scanner = PortfolioScanner()
-        results = scanner.scan_all(threshold=0)
+        results = scanner.scan_all(threshold=threshold)
         return {"data": {"count": len(results), "results": results}}
     except Exception as e:
-        from fastapi import HTTPException
         raise HTTPException(500, f"扫描失败: {e}")
+
+
+@router.post("/scan/{code}")
+def scan_single(code: str, threshold: int = 0):
+    """扫描单只持仓"""
+    from core.database import HoldingsRepo
+    from core.portfolio_manager import PortfolioScanner
+    holding = HoldingsRepo.get_by_code(code)
+    if not holding:
+        raise HTTPException(404, f"未找到持仓: {code}")
+    try:
+        scanner = PortfolioScanner()
+        result = scanner.scan_holding(holding)
+        if result and result["risk_score"] >= threshold:
+            scanner._persist_alert(result)
+            scanner._notify_if_needed(result, holding)
+        return {"data": result}
+    except Exception as e:
+        raise HTTPException(500, f"扫描 {code} 失败: {e}")
