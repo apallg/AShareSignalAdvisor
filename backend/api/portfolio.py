@@ -31,6 +31,14 @@ def add_holding(h: HoldingCreate):
     return {"status": "ok"}
 
 
+@router.put("/holdings/{code}")
+def update_holding(code: str, data: dict):
+    """更新持仓：risk_threshold, alerts_enabled 等"""
+    from core.database import HoldingsRepo
+    HoldingsRepo.update(code, **data)
+    return {"status": "ok"}
+
+
 @router.delete("/holdings/{code}")
 def delete_holding(code: str):
     from core.database import HoldingsRepo

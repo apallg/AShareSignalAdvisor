@@ -40,25 +40,77 @@
         </button>
       </div>
       <table>
-        <tr><th>代码</th><th>名称</th><th>持股</th><th>成本</th><th>告警</th><th>最近风险</th><th>操作</th></tr>
-        <tr v-for="h in holdings" :key="h.code">
-          <td>{{ h.code }}</td>
-          <td>{{ h.name }}</td>
-          <td>{{ h.shares }}</td>
-          <td>{{ Number(h.cost_price).toFixed(2) }}</td>
-          <td>{{ h.alerts_enabled ? '开启' : '关闭' }}</td>
-          <td>
-            <span v-if="scannedCodes[h.code]" :class="['tag', scannedCodes[h.code].risk_level === '高风险' ? 'tag-high' : scannedCodes[h.code].risk_level === '中风险' ? 'tag-mid' : 'tag-low']">
-              {{ scannedCodes[h.code].risk_level }} {{ scannedCodes[h.code].risk_score }}/10
-            </span>
-            <span v-else style="color:#999;">--</span>
-          </td>
-          <td>
-            <button class="btn" style="padding:4px 12px;font-size:11px;" @click="scanOne(h.code)" :disabled="singleScanning === h.code">
-              {{ singleScanning === h.code ? '扫描中...' : '扫描' }}
-            </button>
-          </td>
-        </tr>
+        <tr><th>代码</th><th>名称</th><th>持股</th><th>成本</th><th>通知阈值</th><th>最近风险</th><th>操作</th></tr>
+        <template v-for="h in holdings" :key="h.code">
+          <tr>
+            <td>{{ h.code }}</td>
+            <td>{{ h.name }}</td>
+            <td>{{ h.shares }}</td>
+            <td>{{ Number(h.cost_price).toFixed(2) }}</td>
+            <td>
+              <select v-model.number="h.risk_threshold" @change="updateThreshold(h)" style="width:52px;font-size:11px;padding:2px;">
+                <option v-for="n in 10" :key="n" :value="n">{{ n }}</option>
+              </select>
+            </td>
+            <td>
+              <span v-if="scannedCodes[h.code]"
+                :class="['tag', riskTagClass(scannedCodes[h.code].risk_level)]"
+                style="cursor:pointer;"
+                @click="toggleDetail(h.code)">
+                {{ scannedCodes[h.code].risk_level }} {{ scannedCodes[h.code].risk_score }}/10
+              </span>
+              <span v-else style="color:#999;">--</span>
+            </td>
+            <td>
+              <button class="btn" style="padding:4px 12px;font-size:11px;" @click="scanOne(h.code)" :disabled="singleScanning === h.code">
+                {{ singleScanning === h.code ? '扫描中...' : '扫描' }}
+              </button>
+            </td>
+          </tr>
+          <tr v-if="expanded === h.code && scannedCodes[h.code]" class="detail-row">
+            <td colspan="7">
+              <div class="scan-detail">
+                <div class="detail-header">
+                  <span>{{ scannedCodes[h.code].stock_name }}({{ h.code }}) 风险详情</span>
+                  <button class="btn" style="padding:2px 8px;font-size:11px;" @click="expanded = ''">收起</button>
+                </div>
+                <div class="detail-grid">
+                  <div>
+                    <div class="detail-label">风险评分</div>
+                    <div class="detail-value">{{ scannedCodes[h.code].risk_score }}/10</div>
+                  </div>
+                  <div>
+                    <div class="detail-label">风险等级</div>
+                    <div class="detail-value">{{ scannedCodes[h.code].risk_level }}</div>
+                  </div>
+                  <div>
+                    <div class="detail-label">当前价格</div>
+                    <div class="detail-value">{{ scannedCodes[h.code].current_price || '--' }}</div>
+                  </div>
+                  <div>
+                    <div class="detail-label">盈亏</div>
+                    <div class="detail-value" :style="{color: scannedCodes[h.code].profit_loss >= 0 ? '#27ae60' : '#e94560'}">
+                      {{ scannedCodes[h.code].profit_loss?.toFixed(2) || '--' }}
+                      ({{ scannedCodes[h.code].profit_loss_pct?.toFixed(2) || '--' }}%)
+                    </div>
+                  </div>
+                </div>
+                <div v-if="scannedCodes[h.code].suggestion" class="detail-section">
+                  <div class="detail-label">操作建议</div>
+                  <div class="detail-text">{{ scannedCodes[h.code].suggestion }}</div>
+                </div>
+                <div class="detail-section">
+                  <div class="detail-label">分析详情</div>
+                  <div class="detail-text" style="white-space:pre-wrap;max-height:400px;overflow-y:auto;">{{ scannedCodes[h.code].risk_detail }}</div>
+                </div>
+                <div v-if="scannedCodes[h.code].data_enabled" style="font-size:11px;color:#999;margin-top:8px;">
+                  数据源: {{ scannedCodes[h.code].data_enabled.join('、') }}
+                  <span v-if="scannedCodes[h.code].data_skipped?.length"> | 跳过: {{ scannedCodes[h.code].data_skipped.join('、') }}</span>
+                </div>
+              </div>
+            </td>
+          </tr>
+        </template>
       </table>
     </div>
     <div v-else class="card empty">暂无持仓，请先在持仓管理中添加股票</div>
@@ -110,6 +162,7 @@ const msg = ref('')
 const testing = ref(false)
 const scanning = ref(false)
 const singleScanning = ref('')
+const expanded = ref('')
 const include = reactive({
   technical: true,
   financial: true,
@@ -129,10 +182,27 @@ const filtered = computed(() =>
   !levelFilter.value ? alerts.value : alerts.value.filter(a => a.risk_level === levelFilter.value)
 )
 
+function riskTagClass(level) {
+  return level === '高风险' ? 'tag-high' : level === '中风险' ? 'tag-mid' : 'tag-low'
+}
+
+function toggleDetail(code) {
+  expanded.value = expanded.value === code ? '' : code
+}
+
+async function updateThreshold(h) {
+  try {
+    await api.put(`/portfolio/holdings/${h.code}`, { risk_threshold: h.risk_threshold })
+  } catch (e) { /* 忽略 */ }
+}
+
 async function loadHoldings() {
   try {
     const r = await api.get('/portfolio/holdings')
-    holdings.value = r.data || []
+    holdings.value = (r.data || []).map(h => ({
+      ...h,
+      risk_threshold: h.risk_threshold || 7,
+    }))
   } catch (e) { /* 忽略 */ }
 }
 
@@ -169,6 +239,7 @@ async function scanOne(code) {
     const r = await api.post(`/alerts/scan/${code}`, payload)
     if (r.data) {
       scannedCodes.value[code] = r.data
+      expanded.value = code
     }
     await loadData()
   } catch (e) { error.value = e.message }
@@ -205,3 +276,48 @@ async function loadData() {
 
 onMounted(() => { loadHoldings(); loadChannels(); loadData() })
 </script>
+<style scoped>
+.detail-row td {
+  padding: 0;
+  background: #0f1825;
+}
+.scan-detail {
+  padding: 16px 20px;
+  border-top: 1px solid #1e2d3d;
+}
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.detail-label {
+  font-size: 11px;
+  color: #999;
+  margin-bottom: 2px;
+}
+.detail-value {
+  font-size: 14px;
+  font-weight: 600;
+}
+.detail-section {
+  margin-top: 10px;
+}
+.detail-text {
+  font-size: 12px;
+  color: #ccc;
+  margin-top: 4px;
+  line-height: 1.6;
+  background: #060d15;
+  padding: 10px 14px;
+  border-radius: 6px;
+}
+</style>
