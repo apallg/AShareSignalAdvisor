@@ -15,6 +15,7 @@ STATUS_MAP = {48: "pending", 50: "pending", 56: "filled", 57: "cancelled", 52: "
 
 BUY_ORDER_TYPES = (23, 24)
 FIX_PRICE_TYPE = 11
+MARKET_PRICE_TYPE = 12
 
 
 class QmtBroker(BaseBroker):
@@ -38,6 +39,7 @@ class QmtBroker(BaseBroker):
 
         self._lock = threading.Lock()
         self._last_sync = {}  # method → timestamp
+        self._event_thread = None
 
     def connect(self):
         try:
@@ -50,6 +52,9 @@ class QmtBroker(BaseBroker):
                 "或参考 https://dict.thinktrader.net"
             )
 
+        # 清理可能残留的会话锁文件（避免 connect 返回 -1）
+        self._cleanup_stale_locks()
+
         self._stock_account = StockAccount(self._account, 'STOCK')
         self._trader = XtQuantTrader(self._userdata_dir, self._session_id)
         self._callback = _TraderCallback(self)
@@ -61,6 +66,11 @@ class QmtBroker(BaseBroker):
             self._connected = True
             self._sync_positions()
             self._sync_asset()
+            # 启动后台线程处理 QMT 事件循环（心跳 + 回调）
+            self._event_thread = threading.Thread(
+                target=self._trader.run_forever, daemon=True, name="qmt-event"
+            )
+            self._event_thread.start()
             logger.info(f"QmtBroker 已连接, 账户: {self._stock_account}, 资产: {self._asset}")
         else:
             logger.error(f"QmtBroker 连接失败, 返回码: {connect_result}")
@@ -68,11 +78,32 @@ class QmtBroker(BaseBroker):
 
         return True
 
+    def _cleanup_stale_locks(self):
+        """清理上次会话可能残留的锁文件，避免 session_id 被锁定"""
+        import os
+        prefixes = (
+            f"down_queue_win_{self._session_id}",
+            f"up_queue_win_{self._session_id}",
+            f"lock_down_queue_win_{self._session_id}",
+            f"lock_up_queue_win_{self._session_id}",
+        )
+        try:
+            for name in os.listdir(self._userdata_dir):
+                if name.startswith(prefixes):
+                    try:
+                        os.remove(os.path.join(self._userdata_dir, name))
+                        logger.debug(f"清理残留锁文件: {name}")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
     def disconnect(self):
         self._connected = False
         if self._trader:
             self._trader.stop()
             self._trader = None
+        self._event_thread = None
 
     @property
     def connected(self):
@@ -81,6 +112,15 @@ class QmtBroker(BaseBroker):
     @property
     def account_id(self):
         return self._account_id
+
+    @staticmethod
+    def _normalize_symbol(symbol):
+        """补齐交易所后缀：600879 → 600879.SH, 000001 → 000001.SZ"""
+        symbol = symbol.strip()
+        if "." in symbol:
+            return symbol
+        from core.data_sources.miniqmt_source import MiniQmtSource
+        return MiniQmtSource.to_xtcode(symbol)
 
     def place_order(self, symbol, name, side, quantity, price_type, price=None):
         if not self._connected:
@@ -91,6 +131,8 @@ class QmtBroker(BaseBroker):
         except ImportError:
             raise RuntimeError("xtquant 未安装")
 
+        symbol = self._normalize_symbol(symbol)
+
         if side == "buy":
             order_type = xtconstant.STOCK_BUY
         elif side == "sell":
@@ -99,8 +141,21 @@ class QmtBroker(BaseBroker):
             raise ValueError(f"不支持的交易方向: {side}")
 
         if price_type == "market" or not price or float(price) <= 0:
-            price_type_xt = xtconstant.LATEST_PRICE
-            price = 0
+            price_type_xt = xtconstant.FIX_PRICE
+            try:
+                from xtquant import xtdata
+                tick = xtdata.get_full_tick([symbol])
+                if tick and symbol in tick:
+                    t = tick[symbol]
+                    price = float(t.get("lastPrice", 0) or t.get("lastClose", 0) or 0)
+                if not price or price <= 0:
+                    detail = xtdata.get_instrument_detail(symbol)
+                    if detail:
+                        price = float(detail.get("PreClose", 0) or detail.get("LastPrice", 0) or 0)
+            except Exception:
+                pass
+            if not price or price <= 0:
+                raise RuntimeError(f"无法获取 {symbol} 的最新价，请使用限价单")
         else:
             price_type_xt = xtconstant.FIX_PRICE
 
@@ -250,7 +305,7 @@ class QmtBroker(BaseBroker):
                         "name": existing.get("name", ""),
                         "side": "buy" if order_type in BUY_ORDER_TYPES else "sell",
                         "quantity": int(self._attr(o, "order_volume", 0)),
-                        "price_type": "limit" if self._attr(o, "price_type", 0) == FIX_PRICE_TYPE else "market",
+                        "price_type": "market" if self._attr(o, "price_type", 0) == MARKET_PRICE_TYPE else "limit",
                         "price": float(self._attr(o, "price", 0)),
                         "filled_qty": int(self._attr(o, "traded_volume", 0)),
                         "filled_price": float(self._attr(o, "traded_price", 0)),
@@ -333,7 +388,7 @@ class _TraderCallback:
                 "name": existing.get("name", ""),
                 "side": "buy" if order_type in BUY_ORDER_TYPES else "sell",
                 "quantity": int(self._broker._attr(order, "order_volume", 0)),
-                "price_type": "limit" if self._broker._attr(order, "price_type", 0) == FIX_PRICE_TYPE else "market",
+                "price_type": "market" if self._broker._attr(order, "price_type", 0) == MARKET_PRICE_TYPE else "limit",
                 "price": float(self._broker._attr(order, "price", 0)),
                 "filled_qty": int(self._broker._attr(order, "traded_volume", 0)),
                 "filled_price": float(self._broker._attr(order, "traded_price", 0)),

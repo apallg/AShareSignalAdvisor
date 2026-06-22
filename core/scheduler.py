@@ -22,8 +22,7 @@ def _parse_time(s):
     return datetime.time(h, m)
 
 
-def _is_trading_day(dt):
-    return dt.weekday() < 5
+from core.trading_time import is_trading_day
 
 
 class TradingDayScheduler:
@@ -78,7 +77,7 @@ class TradingDayScheduler:
 
         d = today
         while True:
-            if _is_trading_day(d):
+            if is_trading_day(d):
                 m = datetime.datetime.combine(d, self._morning_t)
                 a = datetime.datetime.combine(d, self._afternoon_t)
                 times = []

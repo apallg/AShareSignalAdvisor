@@ -1,12 +1,16 @@
 """
 StrategyRunner — 实盘策略运行引擎
-定时轮询行情 → 计算指标 → 策略产生信号 → 自动下单
+定时轮询行情 → 计算指标 → 策略产生信号 → 融合过滤 → 自动下单
+支持交易时段感知、收盘前强制平仓、多指标信号融合投票
 """
 import time
 import logging
 import threading
+from collections import deque
 from datetime import datetime
 from .strategies import LIVE_STRATEGIES
+
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +18,7 @@ logger = logging.getLogger(__name__)
 class StrategyRunner:
     def __init__(self):
         self._runners = {}  # runner_id → {config, thread, strategy, broker}
-        self._signal_log = []  # 最近信号记录
+        self._signal_log = deque(maxlen=1000)  # 最近信号记录
         self._lock = threading.Lock()
         self._counter = 0
 
@@ -69,9 +73,9 @@ class StrategyRunner:
             raise ValueError(f"未知策略: {strategy_key}")
 
         strategy = cls(**(params or {}))
-        runner_id = f"{strategy_key}_{symbol}_{datetime.now().strftime('%H%M%S')}"
+        runner_id = f"{strategy_key.replace('/', '-')}_{symbol}_{datetime.now().strftime('%H%M%S')}"
 
-        config = {
+        cfg = {
             "id": runner_id,
             "strategy_key": strategy_key,
             "strategy_name": strategy.name,
@@ -79,17 +83,32 @@ class StrategyRunner:
             "params": params or {},
             "interval_sec": interval_sec,
             "status": "starting",
+            "status_detail": "starting",
             "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "signals": 0,
             "last_signal": None,
+            "last_check": None,
+            "last_force_close_tag": None,
+            "signal_fusion_enabled": config.SIGNAL_FUSION_ENABLED,
+            "fusion_mode": config.SIGNAL_FUSION_MODE,
+            "fusion_min_confidence": config.SIGNAL_FUSION_MIN_CONFIDENCE,
+            "fusion_weights": {
+                "MACD": config.SIGNAL_FUSION_WEIGHT_MACD,
+                "RSI": config.SIGNAL_FUSION_WEIGHT_RSI,
+                "MA": config.SIGNAL_FUSION_WEIGHT_MA,
+                "KDJ": config.SIGNAL_FUSION_WEIGHT_KDJ,
+                "BB": config.SIGNAL_FUSION_WEIGHT_BB,
+                "VOLUME": config.SIGNAL_FUSION_WEIGHT_VOLUME,
+            },
+            "last_fusion_result": None,
         }
 
         thread = threading.Thread(
-            target=self._run_loop, args=(runner_id, strategy, broker, config), daemon=True
+            target=self._run_loop, args=(runner_id, strategy, broker, cfg), daemon=True
         )
 
         with self._lock:
-            self._runners[runner_id] = {"config": config, "thread": thread, "strategy": strategy, "broker": broker}
+            self._runners[runner_id] = {"config": cfg, "thread": thread, "strategy": strategy, "broker": broker}
 
         thread.start()
         logger.info(f"策略运行器已启动: {runner_id}")
@@ -113,15 +132,18 @@ class StrategyRunner:
 
     def get_signals(self, limit=50):
         with self._lock:
-            return list(reversed(self._signal_log[-limit:]))
+            items = list(self._signal_log)
+            return list(reversed(items[-limit:]))
 
-    def _run_loop(self, runner_id, strategy, broker, config):
+    def _run_loop(self, runner_id, strategy, broker, cfg):
         try:
             from core.data_fetcher import DataFetcher
             from core.analyzer import Analyzer
+            from core.trading_time import is_trading_time, is_force_close_window
+            from core.signal_fusion import SignalFusion
 
             fetcher = DataFetcher()
-            config["status"] = "running"
+            cfg["status"] = "running"
 
             while True:
                 with self._lock:
@@ -129,43 +151,92 @@ class StrategyRunner:
                         break
 
                 try:
-                    symbol = config["symbol"]
-                    end_date = datetime.now().strftime("%Y-%m-%d")
+                    now = datetime.now()
+                    symbol = cfg["symbol"]
+
+                    if not is_trading_time(now):
+                        cfg["status_detail"] = "非交易时段"
+                        time.sleep(config.TRADING_IDLE_INTERVAL)
+                        continue
+
+                    if config.FORCE_CLOSE_ENABLED and is_force_close_window(now, config.FORCE_CLOSE_TIME):
+                        cfg["status_detail"] = "收盘前强制平仓窗口"
+                        self._force_close_all(runner_id, broker, cfg, strategy)
+                        time.sleep(60)
+                        continue
+
+                    cfg["status_detail"] = "交易中"
+                    end_date = now.strftime("%Y-%m-%d")
                     df = fetcher.get_stock_daily(symbol, "2024-01-01", end_date)
 
                     if df is None or df.empty:
-                        time.sleep(config["interval_sec"])
+                        time.sleep(cfg["interval_sec"])
                         continue
 
                     df = Analyzer.add_indicators(df)
                     signal = strategy.check_signal(df)
 
-                    if signal["action"] in ("buy", "sell"):
-                        self._execute(signal, strategy, broker, symbol, config)
-                        self._log_signal(runner_id, config, signal, strategy)
+                    fusion_result = None
+                    if cfg["signal_fusion_enabled"] and signal["action"] in ("buy", "sell"):
+                        fusion = SignalFusion(weights=cfg["fusion_weights"])
+                        fusion_result = fusion.evaluate(df)
+                        cfg["last_fusion_result"] = {
+                            "score": fusion_result.score,
+                            "action": fusion_result.action,
+                            "confidence": fusion_result.confidence,
+                            "indicator_votes": fusion_result.indicator_votes,
+                            "reasons": fusion_result.reasons,
+                        }
 
-                    config["last_check"] = datetime.now().strftime("%H:%M:%S")
+                        if cfg["fusion_mode"] == "override":
+                            if fusion_result.action in ("buy", "sell"):
+                                signal["action"] = fusion_result.action
+                                signal["reason"] = f"[融合覆写] {', '.join(fusion_result.reasons[:3])}"
+                                signal["size_ratio"] = fusion_result.confidence
+                            else:
+                                signal["action"] = "hold"
+                                continue
+                        else:
+                            votes = fusion_result.indicator_votes
+                            agree = sum(
+                                1 for v in votes.values()
+                                if (signal["action"] == "buy" and v > 0) or (signal["action"] == "sell" and v < 0)
+                            )
+                            total = len([v for v in votes.values() if v != 0])
+                            if total > 0 and agree / total < cfg["fusion_min_confidence"]:
+                                signal["action"] = "hold"
+                                logger.info(
+                                    f"融合投票抑制信号 [{runner_id}]: {signal.get('reason')} → "
+                                    f"指标分歧({agree}/{total})"
+                                )
+                                continue
+
+                    if signal["action"] in ("buy", "sell"):
+                        self._execute(signal, strategy, broker, symbol, cfg)
+                        self._log_signal(runner_id, cfg, signal, strategy, fusion_result)
+
+                    cfg["last_check"] = now.strftime("%H:%M:%S")
                 except Exception as e:
                     logger.error(f"策略循环错误 [{runner_id}]: {e}")
 
-                time.sleep(config["interval_sec"])
+                time.sleep(cfg["interval_sec"])
 
         except Exception as e:
             logger.error(f"策略运行器异常 [{runner_id}]: {e}")
         finally:
-            config["status"] = "stopped"
-            config["stopped_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cfg["status"] = "stopped"
+            cfg["stopped_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    def _execute(self, signal, strategy, broker, symbol, config):
+    def _execute(self, signal, strategy, broker, symbol, cfg):
         from core.data_fetcher import DataFetcher
         fetcher = DataFetcher()
         q = fetcher.get_realtime_quote(symbol)
         price = float(q.get("最新价", 0))
         signal["exec_price"] = price
-        name = config.get("stock_name", "")
+        name = cfg.get("stock_name", "")
         if not name:
             name = q.get("名称", symbol)
-            config["stock_name"] = name
+            cfg["stock_name"] = name
 
         broker_positions = {p["symbol"]: p for p in broker.get_positions()}
         broker_has = broker_positions.get(symbol, {}).get("shares", 0)
@@ -194,6 +265,37 @@ class StrategyRunner:
             broker.place_order(symbol, name, "sell", broker_has, "market")
             strategy.on_fill("sell", price, broker_has)
 
+    def _force_close_all(self, runner_id, broker, cfg, strategy):
+        today_key = datetime.now().strftime("%Y%m%d")
+        force_tag = f"FORCE_CLOSE_{today_key}"
+        if cfg.get("last_force_close_tag") == force_tag:
+            return
+
+        symbol = cfg["symbol"]
+        broker_positions = {p["symbol"]: p for p in broker.get_positions()}
+        shares = broker_positions.get(symbol, {}).get("shares", 0)
+        if shares <= 0:
+            return
+
+        from core.data_fetcher import DataFetcher
+        q = DataFetcher().get_realtime_quote(symbol)
+        price = float(q.get("最新价", 0))
+        name = cfg.get("stock_name", symbol)
+
+        broker.place_order(symbol, name, "sell", shares, "market")
+        strategy.on_fill("sell", price, shares)
+        cfg["last_force_close_tag"] = force_tag
+
+        signal = {
+            "action": "sell",
+            "size_ratio": 1.0,
+            "reason": config.FORCE_CLOSE_REASON,
+            "exec_price": price,
+            "force_close": True,
+        }
+        self._log_signal(runner_id, cfg, signal, strategy)
+        logger.warning(f"收盘前强制平仓 [{runner_id}]: {symbol} {shares}股 @ {price}")
+
     def _current_price(self, symbol):
         try:
             from core.data_fetcher import DataFetcher
@@ -202,27 +304,30 @@ class StrategyRunner:
         except Exception:
             return 0
 
-    def _log_signal(self, runner_id, config, signal, strategy):
-        current_price = signal.get("exec_price", self._current_price(config["symbol"]))
+    def _log_signal(self, runner_id, cfg, signal, strategy, fusion_result=None):
+        current_price = signal.get("exec_price", self._current_price(cfg["symbol"]))
         entry = {
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "runner_id": runner_id,
-            "strategy": config["strategy_name"],
-            "symbol": config["symbol"],
+            "strategy": cfg["strategy_name"],
+            "symbol": cfg["symbol"],
             "action": signal["action"],
             "reason": signal["reason"],
             "price": current_price,
             "position_after": strategy.position,
+            "force_close": signal.get("force_close", False),
         }
+        if fusion_result is not None:
+            entry["fusion_score"] = fusion_result.score
+            entry["fusion_confidence"] = fusion_result.confidence
+            entry["fusion_votes"] = fusion_result.indicator_votes
 
         with self._lock:
             self._signal_log.append(entry)
-            if len(self._signal_log) > 1000:
-                self._signal_log = self._signal_log[-500:]
-            config["signals"] += 1
-            config["last_signal"] = entry
+            cfg["signals"] += 1
+            cfg["last_signal"] = entry
 
-        logger.info(f"信号 [{runner_id}]: {signal['action'].upper()} {config['symbol']} — {signal['reason']}")
+        logger.info(f"信号 [{runner_id}]: {signal['action'].upper()} {cfg['symbol']} — {signal['reason']}")
 
 
 _runner = None

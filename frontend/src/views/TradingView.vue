@@ -2,7 +2,7 @@
   <div>
     <h1 class="page-title">
       交易面板
-      <span v-if="!cashEnabled" style="font-size:12px;color:#e94560;font-weight:normal;">QMT 实盘</span>
+      <span v-if="!cashEnabled" style="font-size:12px;color:#e94560;font-weight:normal;">{{ brokerLabel }}</span>
     </h1>
     <div v-if="error" class="error">{{ error }}</div>
 
@@ -57,15 +57,19 @@
       <div v-if="positions.length" class="card">
         <div class="card-title">持仓</div>
         <table>
-          <tr><th>代码</th><th>数量</th><th>成本</th><th>现价</th><th>市值</th><th>盈亏</th></tr>
-          <tr v-for="p in positions" :key="p.symbol">
-            <td>{{ p.symbol }}</td>
-            <td>{{ p.shares }}</td>
-            <td>{{ p.avg_cost }}</td>
-            <td>{{ p.current_price }}</td>
-            <td>{{ p.market_value }}</td>
-            <td :class="p.unrealized_pnl >= 0 ? 'text-red' : 'text-green'">{{ p.unrealized_pnl >= 0 ? '+' : '' }}{{ p.unrealized_pnl }}</td>
-          </tr>
+          <thead>
+            <tr><th>代码</th><th>数量</th><th>成本</th><th>现价</th><th>市值</th><th>盈亏</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="p in positions" :key="p.symbol">
+              <td>{{ p.symbol }}</td>
+              <td>{{ p.shares }}</td>
+              <td>{{ p.avg_cost }}</td>
+              <td>{{ p.current_price }}</td>
+              <td>{{ p.market_value }}</td>
+              <td :class="p.unrealized_pnl >= 0 ? 'text-red' : 'text-green'">{{ p.unrealized_pnl >= 0 ? '+' : '' }}{{ p.unrealized_pnl }}</td>
+            </tr>
+          </tbody>
         </table>
       </div>
       <div v-else class="card empty">暂无持仓</div>
@@ -73,15 +77,19 @@
       <div v-if="trades.length" class="card">
         <div class="card-title">成交记录</div>
         <table>
-          <tr><th>时间</th><th>代码</th><th>方向</th><th>价格</th><th>数量</th><th>金额</th></tr>
-          <tr v-for="t in trades.slice(0, 20)" :key="t.id">
-            <td style="white-space:nowrap;">{{ t.trade_time?.slice(5,16) }}</td>
-            <td>{{ t.symbol }}</td>
-            <td :class="t.side==='buy'?'text-red':'text-green'">{{ t.side==='buy'?'买入':'卖出' }}</td>
-            <td>{{ t.price }}</td>
-            <td>{{ t.quantity }}</td>
-            <td>{{ t.amount }}</td>
-          </tr>
+          <thead>
+            <tr><th>时间</th><th>代码</th><th>方向</th><th>价格</th><th>数量</th><th>金额</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="t in trades.slice(0, 20)" :key="t.id">
+              <td style="white-space:nowrap;">{{ t.trade_time?.slice(5,16) }}</td>
+              <td>{{ t.symbol }}</td>
+              <td :class="t.side==='buy'?'text-red':'text-green'">{{ t.side==='buy'?'买入':'卖出' }}</td>
+              <td>{{ t.price }}</td>
+              <td>{{ t.quantity }}</td>
+              <td>{{ t.amount }}</td>
+            </tr>
+          </tbody>
         </table>
       </div>
       <div v-else class="card empty">暂无成交</div>
@@ -95,7 +103,7 @@ import MetricCard from '../components/MetricCard.vue'
 import DataTable from '../components/DataTable.vue'
 import { useBroker } from '../composables/useBroker.js'
 
-const { cashEnabled, loadBroker } = useBroker()
+const { cashEnabled, brokerLabel, loadBroker } = useBroker()
 
 const error = ref('')
 const submitting = ref(false)

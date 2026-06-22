@@ -34,7 +34,7 @@ class Analyzer:
         macd = ta.trend.MACD(close)
         df["MACD"] = macd.macd()
         df["MACD_signal"] = macd.macd_signal()
-        df["MACD_hist"] = macd.macd_diff()
+        df["MACD_diff"] = macd.macd_diff()
 
         # ── RSI ──
         df["RSI14"] = ta.momentum.rsi(close, window=14)

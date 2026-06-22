@@ -60,12 +60,46 @@ MYSQL_ENABLED = bool(MYSQL_PASSWORD and MYSQL_PASSWORD != "your_mysql_password_h
 # QMT / miniQMT 交易配置
 BROKER_FAKE = "fake"
 BROKER_QMT = "qmt"
+BROKER_EASYT = "easytrader"
 BROKER_TYPE = os.getenv("BROKER_TYPE", BROKER_FAKE)
 QMT_USERDATA_DIR = os.getenv("QMT_USERDATA_DIR", "D:\\迅投极速交易终端 睿智融科版\\userdata_mini")
 QMT_ACCOUNT = os.getenv("QMT_ACCOUNT", "")
 QMT_SESSION_ID = int(os.getenv("QMT_SESSION_ID", "123456"))
 
+# easytrader 同花顺客户端交易配置
+EASYTRAIDER_USER = os.getenv("EASYTRAIDER_USER", "")
+EASYTRAIDER_PASSWORD = os.getenv("EASYTRAIDER_PASSWORD", "")
+EASYTRAIDER_EXE_PATH = os.getenv("EASYTRAIDER_EXE_PATH", r"C:\双子星-中国银河证券\Binarystar.exe")
+
 # 交易日定时扫描
 SCAN_MORNING_TIME = os.getenv("SCAN_MORNING_TIME", "09:35")
 SCAN_AFTERNOON_TIME = os.getenv("SCAN_AFTERNOON_TIME", "14:55")
 SCAN_DEFAULT_THRESHOLD = int(os.getenv("SCAN_DEFAULT_THRESHOLD", "7"))
+
+# 收盘前强制平仓
+FORCE_CLOSE_ENABLED = os.getenv("FORCE_CLOSE_ENABLED", "true").lower() == "true"
+FORCE_CLOSE_TIME = os.getenv("FORCE_CLOSE_TIME", "14:54")
+FORCE_CLOSE_REASON = os.getenv("FORCE_CLOSE_REASON", "收盘前强制平仓")
+TRADING_IDLE_INTERVAL = int(os.getenv("TRADING_IDLE_INTERVAL", "300"))
+
+# === qlib 集成配置 ===
+QLIB_ENABLED = os.getenv("QLIB_ENABLED", "true").lower() == "true"
+QLIB_DATA_DIR = ROOT_DIR / "data" / "qlib_data"
+QLIB_PROVIDER_URI = os.getenv("QLIB_PROVIDER_URI", str(QLIB_DATA_DIR.resolve()))
+QLIB_MLFLOW_URI = os.getenv("QLIB_MLFLOW_URI", "file:" + str((ROOT_DIR / "mlruns").resolve()))
+QLIB_EXPERIMENT_NAME = os.getenv("QLIB_EXPERIMENT_NAME", "a_share_quant")
+QLIB_DEFAULT_MODEL = os.getenv("QLIB_DEFAULT_MODEL", "lightgbm")
+QLIB_DEFAULT_FACTOR_SET = os.getenv("QLIB_DEFAULT_FACTOR_SET", "Alpha158")
+QLIB_NUM_THREADS = int(os.getenv("QLIB_NUM_THREADS", "4"))
+QLIB_TRAIN_TIMEOUT = int(os.getenv("QLIB_TRAIN_TIMEOUT", "3600"))
+
+# 多指标信号融合投票
+SIGNAL_FUSION_ENABLED = os.getenv("SIGNAL_FUSION_ENABLED", "false").lower() == "true"
+SIGNAL_FUSION_MODE = os.getenv("SIGNAL_FUSION_MODE", "filter")     # "filter" | "override"
+SIGNAL_FUSION_MIN_CONFIDENCE = float(os.getenv("SIGNAL_FUSION_MIN_CONFIDENCE", "0.6"))
+SIGNAL_FUSION_WEIGHT_MACD = float(os.getenv("SIGNAL_FUSION_WEIGHT_MACD", "1.0"))
+SIGNAL_FUSION_WEIGHT_RSI = float(os.getenv("SIGNAL_FUSION_WEIGHT_RSI", "0.8"))
+SIGNAL_FUSION_WEIGHT_MA = float(os.getenv("SIGNAL_FUSION_WEIGHT_MA", "0.7"))
+SIGNAL_FUSION_WEIGHT_KDJ = float(os.getenv("SIGNAL_FUSION_WEIGHT_KDJ", "0.5"))
+SIGNAL_FUSION_WEIGHT_BB = float(os.getenv("SIGNAL_FUSION_WEIGHT_BB", "0.6"))
+SIGNAL_FUSION_WEIGHT_VOLUME = float(os.getenv("SIGNAL_FUSION_WEIGHT_VOLUME", "0.3"))

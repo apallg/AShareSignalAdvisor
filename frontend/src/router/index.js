@@ -13,6 +13,7 @@ const routes = [
   { path: '/trading', name: 'trading', component: () => import('../views/TradingView.vue') },
   { path: '/live', name: 'live', component: () => import('../views/LiveTradingView.vue') },
   { path: '/editor', name: 'editor', component: () => import('../views/StrategyEditor.vue') },
+  { path: '/qlib', name: 'qlib', component: () => import('../views/QlibLab.vue') },
 ]
 
 const router = createRouter({

@@ -28,3 +28,13 @@ def get_sector_stocks(sector_name: str):
         return {"data": df.to_dict(orient="records")}
     except Exception as e:
         return {"data": [], "error": str(e)}
+
+
+@router.get("/{sector_name}/support-resistance")
+def scan_support_resistance(sector_name: str):
+    """批量扫描板块内接近支撑位/压力位的股票"""
+    try:
+        results = scanner.scan_support_resistance(sector_name)
+        return {"data": results}
+    except Exception as e:
+        return {"data": [], "error": str(e)}

@@ -1,5 +1,6 @@
 # 环境变量（含密钥，不可提交）
 .env
+CLAUDE.md
 
 # Python
 __pycache__/

@@ -62,6 +62,7 @@ const navItems = [
     { path: '/lab', label: '策略实验室', icon: '' },
     { path: '/live', label: '策略实盘', icon: '' },
     { path: '/editor', label: '新建策略', icon: '' },
+    { path: '/qlib', label: 'Qlib量化模型', icon: '' },
   ]},
   { label: '交易风控', icon: '💰', children: [
     { path: '/trading', label: '交易面板', icon: '' },

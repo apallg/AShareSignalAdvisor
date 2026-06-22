@@ -66,8 +66,11 @@
         </button>
       </div>
       <table>
-        <tr><th>代码</th><th>名称</th><th>持股</th><th>成本</th><th>通知阈值</th><th>最近风险</th><th>操作</th></tr>
-        <template v-for="h in holdings" :key="h.code">
+        <thead>
+          <tr><th>代码</th><th>名称</th><th>持股</th><th>成本</th><th>通知阈值</th><th>最近风险</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <template v-for="h in holdings" :key="h.code">
           <tr>
             <td>{{ h.code }}</td>
             <td>{{ h.name }}</td>
@@ -136,6 +139,7 @@
             </td>
           </tr>
         </template>
+        </tbody>
       </table>
     </div>
     <div v-else class="card empty">暂无持仓，请先在持仓管理中添加股票</div>
@@ -270,7 +274,7 @@ async function scanOne(code) {
     const payload = { threshold: 0 }
     const inc = getScanParams()
     if (inc) payload.include = inc
-    const r = await api.post(`/alerts/scan/${code}`, payload)
+    const r = await api.post(`/alerts/scan/${code}`, payload, { timeout: 180000 })
     if (r.data) {
       scannedCodes.value[code] = r.data
       _capScanned()
@@ -287,7 +291,7 @@ async function batchScan() {
     const payload = { threshold: scanThreshold.value }
     const inc = getScanParams()
     if (inc) payload.include = inc
-    const r = await api.post('/alerts/scan', payload)
+    const r = await api.post('/alerts/scan', payload, { timeout: 180000 })
     const results = r.data?.results || []
     for (const item of results) {
       scannedCodes.value[item.stock_code] = item

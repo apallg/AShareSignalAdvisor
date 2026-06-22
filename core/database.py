@@ -16,8 +16,11 @@ def _is_connection_alive(conn):
     if conn is None:
         return False
     try:
-        if conn._sock is None:
+        sock = getattr(conn, '_sock', None)
+        if sock is None:
             return False
+        # getsockname 在 socket 已关闭时会抛 OSError
+        sock.getsockname()
         conn.ping(reconnect=False)
         return True
     except Exception:
@@ -42,6 +45,7 @@ class Database:
             cursorclass=pymysql.cursors.DictCursor,
             autocommit=True,
             connect_timeout=5, read_timeout=30, write_timeout=30,
+            ssl={"ssl_disabled": True},
         )
 
     @classmethod
@@ -71,13 +75,22 @@ class Database:
             except (pymysql.err.Error, AttributeError, ValueError, OSError):
                 if attempt < max_retries - 1:
                     with cls._lock:
-                        try:
-                            if cls._conn is not None:
-                                cls._conn.close()
-                        except Exception:
-                            pass
+                        old = cls._conn
+                        cls._conn = None  # 先置空，阻止其他线程拿到坏连接
+                        if old is not None:
+                            try:
+                                # 强制关闭 socket，清理 SSL 会话
+                                sock = getattr(old, '_sock', None)
+                                if sock is not None:
+                                    try:
+                                        sock.close()
+                                    except Exception:
+                                        pass
+                                old.close()
+                            except Exception:
+                                pass
                         cls._conn = cls._connect()
-                    time.sleep(0.1)
+                    time.sleep(0.3)
                     continue
                 raise
 
@@ -305,6 +318,7 @@ class DailyQuotesRepo:
     def save_batch(cls, code, df):
         if df is None or df.empty:
             return
+        import pandas as pd
         rows = []
         for _, row in df.iterrows():
             d = row.get("date")
@@ -326,7 +340,6 @@ class DailyQuotesRepo:
             ))
         if not rows:
             return
-        import pandas as pd
         conn = Database.get_connection()
         with conn.cursor() as cur:
             cur.executemany(

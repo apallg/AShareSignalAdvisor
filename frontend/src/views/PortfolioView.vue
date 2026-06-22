@@ -15,7 +15,7 @@
     <div class="card" style="margin-bottom:16px;">
       <div class="card-title">
         资金管理
-        <span v-if="!cashEnabled" style="font-size:11px;color:#e94560;margin-left:8px;">QMT 实盘 · 不可操作</span>
+        <span v-if="!cashEnabled" style="font-size:11px;color:#e94560;margin-left:8px;">{{ brokerLabel }} · 不可操作</span>
       </div>
       <div v-if="cashEnabled" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
         <div class="flex" style="flex-direction:column;">
@@ -28,7 +28,7 @@
       </div>
       <div style="font-size:12px;color:#999;margin-top:8px;">
         现金: ¥{{ Number(account.cash || 0).toFixed(2) }} &nbsp; 冻结: ¥{{ Number(account.frozen || 0).toFixed(2) }}
-        <span v-if="!cashEnabled" style="margin-left:8px;color:#e94560;">(来自 QMT，不可修改)</span>
+        <span v-if="!cashEnabled" style="margin-left:8px;color:#e94560;">(来自 {{ brokerLabel }}，不可修改)</span>
       </div>
     </div>
 
@@ -41,12 +41,16 @@
     <template v-if="tab==='list'">
       <div v-if="holdings.length" class="card">
         <table>
-          <tr><th>代码</th><th>名称</th><th>持股数</th><th>成本价</th><th>买入日期</th><th>操作</th></tr>
-          <tr v-for="h in holdings" :key="h.code">
+          <thead>
+            <tr><th>代码</th><th>名称</th><th>持股数</th><th>成本价</th><th>买入日期</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="h in holdings" :key="h.code">
             <td>{{ h.code }}</td><td>{{ h.name }}</td><td>{{ h.shares }}</td>
             <td>{{ Number(h.cost_price).toFixed(2) }}</td><td>{{ h.buy_date || '--' }}</td>
             <td><button class="btn" style="background:#e74c3c;padding:4px 12px;font-size:12px" @click="del(h.code)">删除</button></td>
           </tr>
+            </tbody>
         </table>
       </div>
       <div v-else class="card empty">暂无持仓</div>
@@ -69,7 +73,7 @@ import api from '../api/index.js'
 import MetricCard from '../components/MetricCard.vue'
 import { useBroker } from '../composables/useBroker.js'
 
-const { cashEnabled, loadBroker } = useBroker()
+const { cashEnabled, brokerLabel, loadBroker } = useBroker()
 
 const tab = ref('list')
 const holdings = ref([])

@@ -12,7 +12,7 @@
           </select></div>
         <div class="flex"><label style="width:80px;">方式</label>
           <select v-model="method" style="flex:1;"><option value="grid">网格搜索</option><option value="genetic">遗传算法</option></select></div>
-        <div class="flex"><label style="width:80px;">股票</label><input v-model="code" placeholder="600519" style="flex:1;" /></div>
+        <div class="flex"><label style="width:80px;">股票</label><input v-model="codes" placeholder="600519,000001" style="flex:1;" /></div>
       </div>
       <div v-if="strategy && strategyParams.length" style="margin-top:12px;border-top:1px solid #eee;padding-top:12px;">
         <div class="card-title" style="font-size:13px;">优化参数范围</div>
@@ -50,7 +50,7 @@ import api from '../api/index.js'
 const strategies = ref({})
 const strategy = ref('')
 const method = ref('grid')
-const code = ref('600519')
+const codes = ref('600519')
 const strategyParams = ref([])
 const paramRanges = ref({})
 const running = ref(false)
@@ -78,7 +78,11 @@ async function runOptimize() {
       const vals = paramRanges.value[k].split(',').map(Number).filter(v => !isNaN(v))
       if (vals.length) grid[k] = vals
     }
-    const payload = { strategy_name: strategy.value, codes: [code.value], start_date: '20230101', end_date: '20241231', param_grid: grid }
+    const codeList = codes.value.split(',').map(c => c.trim()).filter(Boolean)
+    if (!codeList.length) { error.value = '请输入股票代码'; return }
+    const sd = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, '')
+    const ed = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    const payload = { strategy_name: strategy.value, codes: codeList, start_date: sd, end_date: ed, param_grid: grid }
     const res = await api.post('/backtest/optimize', payload)
     const data = res.data || []
     result.value = data[0] || data

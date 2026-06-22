@@ -61,17 +61,21 @@
     <div v-if="trades.length" class="card">
       <div class="card-title">交易记录 ({{ trades.length }} 笔)</div>
       <table>
-        <tr><th>日期</th><th>操作</th><th>价格</th><th>数量</th><th>盈亏</th><th>原因</th></tr>
-        <tr v-for="(t, i) in trades" :key="i">
-          <td>{{ t.date }}</td>
-          <td :class="t.action === 'buy' ? 'text-red' : 'text-green'">{{ t.action === 'buy' ? '买入' : '卖出' }}</td>
-          <td>{{ t.price }}</td>
-          <td>{{ t.shares }}</td>
-          <td :class="(t.pnl || 0) > 0 ? 'text-red' : (t.pnl || 0) < 0 ? 'text-green' : ''">
-            {{ t.pnl != null ? t.pnl.toFixed(2) : '--' }}
-          </td>
-          <td>{{ t.reason }}</td>
-        </tr>
+        <thead>
+          <tr><th>日期</th><th>操作</th><th>价格</th><th>数量</th><th>盈亏</th><th>原因</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(t, i) in trades" :key="i">
+            <td>{{ t.date }}</td>
+            <td :class="t.action === 'buy' ? 'text-red' : 'text-green'">{{ t.action === 'buy' ? '买入' : '卖出' }}</td>
+            <td>{{ t.price }}</td>
+            <td>{{ t.shares }}</td>
+            <td :class="(t.pnl || 0) > 0 ? 'text-red' : (t.pnl || 0) < 0 ? 'text-green' : ''">
+              {{ t.pnl != null ? t.pnl.toFixed(2) : '--' }}
+            </td>
+            <td>{{ t.reason }}</td>
+          </tr>
+        </tbody>
       </table>
     </div>
   </div>
@@ -89,7 +93,8 @@ const strategyParams = ref([])
 const paramValues = ref({})
 const codes = ref('600519')
 const today = new Date().toISOString().slice(0, 10)
-const startDate = ref(today)
+const oneYearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+const startDate = ref(oneYearAgo)
 const endDate = ref(today)
 const cash = ref(1000000)
 const commission = ref(0.0003)

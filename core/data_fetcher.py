@@ -62,7 +62,6 @@ class DataFetcher:
             self._save_count += 1
             if self._save_count >= 30:
                 DataCacheRepo.cleanup_old(3)
-                DailyQuotesRepo.cleanup_old(3)
                 self._save_count = 0
         except Exception as e:
             logger.warning(f"MySQL持久化失败: {e}")
@@ -314,6 +313,7 @@ class DataFetcher:
 
     def _fetch_akshare_daily(self, symbol, start_date, end_date, adjust):
         """通过 akshare 获取日K（原始逻辑）"""
+        ck = CacheManager.make_key("daily_ak", symbol, start_date, end_date, adjust)
         def _fetch():
             df = _retry(lambda: ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust=adjust))
             if df.empty:
@@ -404,13 +404,38 @@ class DataFetcher:
 
     def get_market_indices(self):
         ck = CacheManager.make_key("indices")
+
+        # 1. Try miniQMT
+        qmt = self._qmt
+        if qmt:
+            try:
+                q = qmt.get_market_indices(list(self._INDEX_MAP.values()))
+                if q:
+                    rows = []
+                    for name, symbol in self._INDEX_MAP.items():
+                        info = q.get(symbol, {})
+                        rows.append({
+                            "名称": name,
+                            "最新价": info.get("price", 0),
+                            "涨跌幅": info.get("pct_chg", 0),
+                        })
+                    df = pd.DataFrame(rows)
+                    if not df.empty:
+                        self._mark_source("indices", "miniQMT(xtdata)")
+                        self.cache.set(ck, df, expire=60)
+                        self._persist(ck, df, 60)
+                        return df
+            except Exception as e:
+                logger.debug(f"miniQMT index spot 未命中: {e}")
+
+        # 2. Try akshare
         def _fetch():
             df = _retry(lambda: ak.stock_zh_index_spot_em(), ma=3, dl=3)
             return df[df["\u540d\u79f0"].isin(list(self._INDEX_MAP.keys()))].copy()
         try:
             return self._get_with_fallback(ck, _fetch, 300)
         except Exception as e:
-            logger.warning(f"akshare index daily({index_name}) 失败: {e}")
+            logger.warning(f"akshare index spot 失败: {e}")
             return pd.DataFrame()
 
     def get_index_daily(self, index_name, days=365):
@@ -470,7 +495,29 @@ class DataFetcher:
 
     def get_sector_performance(self):
         ck = CacheManager.make_key("sectors")
-        # 1. Try Sina HTTP API
+        # 1. Try THS (同花顺) — 不走东方财富域名，不受代理影响
+        try:
+            result = self._ths_sectors()
+            if result is not None and not result.empty:
+                self.cache.set(ck, result, expire=600)
+                self._persist(ck, result, 600)
+                self._mark_source("sectors", "同花顺(THS)")
+                return result
+        except Exception as e:
+            logger.warning(f"THS sectors 失败: {e}")
+
+        # 2. Try akshare (EastMoney)
+        def _fetch():
+            return _retry(lambda: ak.stock_board_industry_name_em(), ma=2, dl=3)
+        try:
+            result = self._get_with_fallback(ck, _fetch, 600)
+            if result is not None and not result.empty:
+                self._mark_source("sectors", "东方财富(akshare)")
+                return result
+        except Exception as e:
+            logger.warning(f"akshare sectors 失败: {e}")
+
+        # 3. Try Sina HTTP (legacy, may be broken)
         try:
             result = self._sina_sectors()
             if result is not None and not result.empty:
@@ -481,19 +528,21 @@ class DataFetcher:
         except Exception as e:
             logger.warning(f"Sina sectors 失败: {e}")
 
-        # 2. Try akshare
-        def _fetch():
-            return _retry(lambda: ak.stock_board_industry_name_em(), ma=2, dl=3)
-        try:
-            result = self._get_with_fallback(ck, _fetch, 600)
-            if result is not None and not result.empty:
-                self._mark_source("sectors", "东方财富(akshare)")
-                return result
-        except Exception as e:
-            logger.warning(f"akshare sectors 失败: {e}")
-            raise Exception(f"所有板块数据源均不可用: {e}")
-        # 3. All sources failed
         raise Exception("板块数据: 所有数据源均不可用")
+
+    def _ths_sectors(self):
+        """通过同花顺 akshare 接口获取板块涨跌排行"""
+        df = _retry(lambda: ak.stock_board_industry_summary_ths(), ma=2, dl=3)
+        if df is None or df.empty:
+            return None
+        # 列名: 序号, 板块名称, 涨跌幅, 总成交量, 总成交额, ...
+        # 映射为统一格式供前端使用
+        df = df.rename(columns={
+            df.columns[1]: "板块名称",
+            df.columns[2]: "涨跌幅",
+        })
+        df["涨跌幅"] = pd.to_numeric(df["涨跌幅"], errors="coerce")
+        return df[["板块名称", "涨跌幅"]]
 
     def _sina_sectors(self):
         import re
@@ -518,7 +567,7 @@ class DataFetcher:
             return None
 
     def get_stock_financial(self, symbol):
-        ck = CacheManager.make_key("fin", symbol)
+        ck = CacheManager.make_key("fin2", symbol)
         try:
             return self._get_with_fallback(ck, lambda: self._fetch_financial(symbol), config.CACHE_EXPIRE_FINANCIAL)
         except Exception as e:
@@ -527,11 +576,33 @@ class DataFetcher:
 
 
     def _fetch_financial(self, symbol):
-        df = _retry(lambda: ak.stock_financial_analysis_indicator(symbol=symbol, start_year=datetime.now().year-1), ma=2, dl=2)
-        if df.empty:
-            raise ValueError("\u65e0\u8d22\u52a1\u6570\u636e")
-        l = df.iloc[-1]
-        return {"\u6bcf\u80a1\u6536\u76ca":l.get("\u6bcf\u80a1\u6536\u76ca",""),"\u51c0\u8d44\u4ea7\u6536\u76ca\u7387":l.get("\u51c0\u8d44\u4ea7\u6536\u76ca\u7387",""),"\u6bcf\u80a1\u51c0\u8d44\u4ea7":l.get("\u6bcf\u80a1\u51c0\u8d44\u4ea7",""),"\u8425\u4e1a\u6536\u5165\u589e\u957f\u7387":l.get("\u8425\u4e1a\u6536\u5165\u589e\u957f\u7387",""),"\u51c0\u5229\u6da6\u589e\u957f\u7387":l.get("\u51c0\u5229\u6da6\u589e\u957f\u7387",""),"\u8d44\u4ea7\u8d1f\u503a\u7387":l.get("\u8d44\u4ea7\u8d1f\u503a\u7387","")}
+        df = _retry(lambda: ak.stock_financial_abstract(symbol=symbol), ma=2, dl=2)
+        if df is None or df.empty:
+            raise ValueError("无财务数据")
+        if len(df.columns) < 3:
+            raise ValueError("财务数据列不足")
+        latest_col = df.columns[2]  # 最新报告期
+        indicator_col = df.columns[1]  # 指标列名
+
+        # 模糊匹配：指标名称可能因 akshare 版本不同而有细微差异
+        def _find_val(*keywords):
+            mask = pd.Series(True, index=df.index)
+            for kw in keywords:
+                mask &= df[indicator_col].astype(str).str.contains(kw, na=False)
+            row = df[mask]
+            if not row.empty:
+                val = row.iloc[0][latest_col]
+                return val if pd.notna(val) else ""
+            return ""
+
+        return {
+            "每股收益": _find_val("基本每股收益"),
+            "净资产收益率": _find_val("净资产收益率", "ROE"),
+            "每股净资产": _find_val("每股净资产"),
+            "营业收入增长率": _find_val("营业总", "收入", "增长"),
+            "净利润增长率": _find_val("归属", "净利润", "增长"),
+            "资产负债率": _find_val("资产负债率"),
+        }
     def get_capital_flow(self, symbol):
         ck = CacheManager.make_key("flow", symbol)
         def _fetch():

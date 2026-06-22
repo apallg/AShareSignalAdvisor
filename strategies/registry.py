@@ -103,8 +103,7 @@ def _extract_params(cls):
 
 
 def get_strategy(name):
-    info = _registry.get(name)
-    return info['class'] if info else None
+    return _registry.get(name)
 
 
 def _find_live_key(mod, subdir, f_stem, zh_name):
