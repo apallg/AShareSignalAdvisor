@@ -1,5 +1,5 @@
 # AShareSignalAdvisor
-仅供大A量化教学
+仅供大A量化教学，未完善
 ## 项目概述
 
 Apallg投研 — A股量化分析平台 部署：Vue 3 前端 (Nginx) → FastAPI 后端 → MySQL 8.0。
