@@ -103,3 +103,19 @@ SIGNAL_FUSION_WEIGHT_MA = float(os.getenv("SIGNAL_FUSION_WEIGHT_MA", "0.7"))
 SIGNAL_FUSION_WEIGHT_KDJ = float(os.getenv("SIGNAL_FUSION_WEIGHT_KDJ", "0.5"))
 SIGNAL_FUSION_WEIGHT_BB = float(os.getenv("SIGNAL_FUSION_WEIGHT_BB", "0.6"))
 SIGNAL_FUSION_WEIGHT_VOLUME = float(os.getenv("SIGNAL_FUSION_WEIGHT_VOLUME", "0.3"))
+
+# 成交密集区分析参数
+DENSE_ZONE_DEFAULT_WINDOW = 40       # 默认时间窗口(交易日)
+DENSE_ZONE_DEFAULT_N_ZONES = 3       # 默认检测的密集区数量
+DENSE_ZONE_DEFAULT_BINS = 100        # 价格分箱数
+DENSE_ZONE_VOLUME_WEIGHTED = True    # 是否启用成交量加权
+DENSE_ZONE_MIN_PROMINENCE = 0.05     # 最小区域显著性阈值
+DENSE_ZONE_PRICE_THRESHOLD_PCT = 2.0 # 价格接近密集区的阈值(%)
+DENSE_ZONE_WINDOW_DAY = 40           # 日线窗口
+DENSE_ZONE_WINDOW_WEEK = 30          # 周线窗口
+DENSE_ZONE_WINDOW_MONTH = 12         # 月线窗口
+
+# 板块数据缓存有效期 (秒) — 板块数据变动频繁，缓存应短于K线数据
+CACHE_EXPIRE_SECTOR_LIST = 900       # 板块列表 15 分钟
+CACHE_EXPIRE_SECTOR_STOCKS = 300     # 板块成分股 5 分钟
+CACHE_EXPIRE_SECTOR_PERF = 600       # 板块涨跌排行 10 分钟

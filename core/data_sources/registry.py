@@ -22,9 +22,10 @@ class _DataSourceRegistry:
                 "description": "财务数据",
             },
             "sectors": {
-                "primary": "akshare",
-                "fallback": "sina",
-                "description": "板块数据",
+                "primary": "ths",
+                "fallback": "eastmoney_http",
+                "tertiary": "akshare",
+                "description": "板块数据 (THS→东财HTTP→akshare)",
             },
             "sentiment": {
                 "primary": "sina_news",

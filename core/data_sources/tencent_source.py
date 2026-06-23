@@ -20,7 +20,7 @@ class TencentSource(BaseRealtimeSource):
         normalized = [self.normalize_symbol(s) for s in symbols]
         url = self.QUOTE_URL.format(symbols=",".join(normalized))
         try:
-            resp = requests.get(url, timeout=5)
+            resp = requests.get(url, timeout=5, proxies={"http": None, "https": None})
             resp.encoding = "gbk"
             return self._parse_response(resp.text)
         except Exception:

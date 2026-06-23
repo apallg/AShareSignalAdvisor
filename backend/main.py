@@ -1,7 +1,16 @@
 ﻿import sys
 import logging
+import math
+import json
 from pathlib import Path
+from typing import Any
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
 
 logger = logging.getLogger(__name__)
 
@@ -9,7 +18,37 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-app = FastAPI(title="Apallg投研 - A股量化分析", version="1.0.0")
+
+def _sanitize_float(v: Any) -> Any:
+    """递归清理 NaN/Infinity 为 None，确保 JSON 可序列化"""
+    if isinstance(v, float):
+        if math.isnan(v) or math.isinf(v):
+            return None
+        return v
+    if isinstance(v, dict):
+        return {k: _sanitize_float(vv) for k, vv in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_sanitize_float(item) for item in v]
+    return v
+
+
+class SafeJSONResponse(JSONResponse):
+    def render(self, content: Any) -> bytes:
+        sanitized = _sanitize_float(content)
+        return json.dumps(
+            sanitized,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=None,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+
+app = FastAPI(
+    title="Apallg投研 - A股量化分析",
+    version="1.0.0",
+    default_response_class=SafeJSONResponse,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,12 +93,27 @@ def _init_database():
         time.sleep(2)
     logger.warning("数据库初始化已跳过")
 
+def _init_baostock_industry():
+    """启动时预加载 baostock 行业分类缓存，确保板块查询回退时有数据可用"""
+    try:
+        from core.data_fetcher import DataFetcher
+        fetcher = DataFetcher()
+        ind_map = fetcher.get_industry_map()
+        if ind_map:
+            logger.info(f"BaoStock 行业映射已缓存 ({len(ind_map)}只)")
+        else:
+            logger.warning("BaoStock 行业映射为空，板块回退可能不可用")
+    except Exception as e:
+        logger.warning(f"BaoStock 行业映射初始化失败: {e}")
+
+
 @app.on_event("startup")
 def startup():
     threading.Thread(target=_init_database, daemon=True).start()
     from core.scheduler import get_scheduler
     get_scheduler().start()
     _init_qlib_data()
+    threading.Thread(target=_init_baostock_industry, daemon=True).start()
 
 
 def _init_qlib_data():

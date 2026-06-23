@@ -28,6 +28,8 @@ def init_qlib():
         qlib.init(
             provider_uri=app_config.QLIB_PROVIDER_URI,
             region=REG_CN,
+            n_jobs=1,
+            joblib_backend="threading",  # Windows pipe 限制，用线程代替进程
             exp_manager={
                 "class": "MLflowExpManager",
                 "module_path": "qlib.workflow.expm",

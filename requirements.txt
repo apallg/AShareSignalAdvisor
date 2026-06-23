@@ -15,6 +15,7 @@ apscheduler>=3.10.0
 pymysql>=1.0.0
 cryptography>=41.0.0
 baostock
+scipy>=1.7.0
 easytrader>=0.23.7
 pywin32
 pyqlib>=0.9.0

@@ -22,7 +22,7 @@ DEFAULT_BACKTEST_CONFIG = {
     "start_time": None,
     "end_time": None,
     "account": 100000000,
-    "benchmark": "SH000300",
+    "benchmark": "SH000300",  # 沪深300指数基准
 }
 
 
@@ -107,24 +107,25 @@ class QlibBacktestRunner:
             par = PortAnaRecord(recorder, config, "day")
             par.generate()
 
-            report = recorder.load_object("portfolio_analysis_report.pkl")
-            indicator = recorder.load_object("indicator_analysis_1day.pkl")
+            report_normal = par.load("report_normal_1day.pkl")
+            port_analysis = par.load("port_analysis_1day.pkl")
+            indicator = par.load("indicator_analysis_1day.pkl")
 
-        # 整理输出
-        report_normalized = {}
-        for key, values in report.items():
-            if isinstance(values, pd.DataFrame):
-                report_normalized[str(key)] = {
-                    col: float(values[col].iloc[0]) if not values.empty else None
-                    for col in values.columns
-                }
+        metrics = {}
+        if isinstance(port_analysis, pd.DataFrame):
+            for col in port_analysis.columns:
+                row = port_analysis[col].to_dict()
+                for k, v in row.items():
+                    key = f"{col}.{k}"
+                    metrics[key] = float(v) if not isinstance(v, (dict, str)) else str(v)
+
+        indicator_vals = {}
+        if isinstance(indicator, pd.DataFrame):
+            indicator_vals = indicator["value"].to_dict()
 
         return {
-            "report": report_normalized,
-            "indicator": {
-                str(k): float(v.iloc[0]) if hasattr(v, "iloc") and not v.empty else v
-                for k, v in indicator.items()
-            } if isinstance(indicator, dict) else {},
+            "metrics": metrics,
+            "indicator": indicator_vals,
         }
 
     def run_from_predictions(self, predictions, label, topk=50, n_drop=5,
@@ -157,14 +158,20 @@ class QlibBacktestRunner:
             par = PortAnaRecord(recorder, config, "day")
             par.generate()
 
-            report = recorder.load_object("portfolio_analysis_report.pkl")
+            report_normal = par.load("report_normal_1day.pkl")
+            port_analysis = par.load("port_analysis_1day.pkl")
+            indicator = par.load("indicator_analysis_1day.pkl")
 
-        report_normalized = {}
-        for key, values in report.items():
-            if isinstance(values, pd.DataFrame):
-                report_normalized[str(key)] = {
-                    col: float(values[col].iloc[0]) if not values.empty else None
-                    for col in values.columns
-                }
+        metrics = {}
+        if isinstance(port_analysis, pd.DataFrame):
+            for col in port_analysis.columns:
+                row = port_analysis[col].to_dict()
+                for k, v in row.items():
+                    key = f"{col}.{k}"
+                    metrics[key] = float(v) if not isinstance(v, (dict, str)) else str(v)
 
-        return {"report": report_normalized}
+        indicator_vals = {}
+        if isinstance(indicator, pd.DataFrame):
+            indicator_vals = indicator["value"].to_dict()
+
+        return {"metrics": metrics, "indicator": indicator_vals}

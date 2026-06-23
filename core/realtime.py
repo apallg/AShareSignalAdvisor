@@ -39,7 +39,7 @@ class RealtimeEngine:
             return cached
         try:
             url = "http://vip.stock.finance.sina.com.cn/q/go.php/vIndustryRank/kind/sshy/p/1/num/50/sort/changepercent/"
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=10, proxies={"http": None, "https": None})
             resp.encoding = "gbk"
             result = {}
             pattern = re.findall(r'<a[^>]*>(\w+)</a>.*?<td[^>]*>(-?\d+\.\d+)%</td>', resp.text, re.DOTALL)
@@ -81,7 +81,7 @@ class RealtimeEngine:
                 "sort": sort, "asc": str(asc),
                 "node": "hs_a", "_s_r_a": "init",
             }
-            resp = requests.get(url, params=params, timeout=10)
+            resp = requests.get(url, params=params, timeout=10, proxies={"http": None, "https": None})
             resp.encoding = "gbk"
             data = json.loads(resp.text)
             result = []

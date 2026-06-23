@@ -30,16 +30,38 @@ SUPPORTED_MODELS = {
 DEFAULT_PARAMS = {
     "lightgbm": {
         "loss": "mse",
-        "learning_rate": 0.05,
+        "learning_rate": 0.03,
         "max_depth": 8,
-        "num_leaves": 210,
+        "num_leaves": 128,
         "num_threads": 4,
+        "min_child_samples": 20,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "reg_alpha": 0.1,
+        "reg_lambda": 0.1,
+        "early_stopping_rounds": 50,
+        "verbose_eval": -1,
     },
     "xgboost": {
-        "max_depth": 6,
-        "learning_rate": 0.05,
-        "n_estimators": 500,
+        "max_depth": 8,
+        "learning_rate": 0.03,
+        "n_estimators": 800,
         "nthread": 4,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "reg_alpha": 0.1,
+        "reg_lambda": 0.1,
+        "early_stopping_rounds": 50,
+    },
+    "catboost": {
+        "learning_rate": 0.03,
+        "depth": 8,
+        "iterations": 800,
+        "thread_count": 4,
+        "subsample": 0.8,
+        "l2_leaf_reg": 3,
+        "early_stopping_rounds": 50,
+        "task_type": "CPU",
     },
     "lstm": {
         "n_epochs": 100,
@@ -155,9 +177,7 @@ class QlibModelManager:
             train_period, valid_period, test_period, model_params,
         )
 
-        model = None
-        pred = None
-        ic_result = None
+        result = {}
 
         with R.start(experiment_name=experiment_name):
             R.log_params(**flatten_dict(task_config))
@@ -175,23 +195,26 @@ class QlibModelManager:
             sar = SigAnaRecord(recorder)
             sar.generate()
 
-            pred = recorder.load_object("pred.pkl")
-            label = recorder.load_object("label.pkl")
-            ic = recorder.load_object("ic.pkl")
-            ric = recorder.load_object("ric.pkl")
+            pred = sr.load("pred.pkl")
+            label = sr.load("label.pkl")
+            ic = sar.load("ic.pkl")
+            ric = sar.load("ric.pkl")
 
-        ic_mean = float(ic["IC"].mean()) if ic is not None else None
-        icir = ic_mean / float(ic["IC"].std()) if ic is not None and ic["IC"].std() > 0 else None
+            ic_mean = float(ic.mean()) if ic is not None else None
+            ic_std = float(ic.std()) if ic is not None else 0
+            icir = ic_mean / ic_std if ic_std > 0 else None
 
-        return {
-            "model": model,
-            "predictions": pred,
-            "label": label,
-            "ic": ic,
-            "ric": ric,
-            "ic_mean": ic_mean,
-            "icir": icir,
-        }
+            result = {
+                "model": model,
+                "predictions": pred,
+                "label": label,
+                "ic": ic,
+                "ric": ric,
+                "ic_mean": ic_mean,
+                "icir": icir,
+            }
+
+        return result
 
     def predict(self, model, dataset_config):
         """使用已训练模型生成预测"""

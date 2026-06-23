@@ -22,7 +22,7 @@ class SinaSource(BaseRealtimeSource):
         normalized = [self.normalize_symbol(s) for s in symbols]
         url = self.QUOTE_URL.format(symbols=",".join(normalized))
         headers = {"Referer": "https://finance.sina.com.cn"}
-        resp = requests.get(url, headers=headers, timeout=5)
+        resp = requests.get(url, headers=headers, timeout=5, proxies={"http": None, "https": None})
         resp.encoding = "gbk"
         return self._parse_response(resp.text)
 

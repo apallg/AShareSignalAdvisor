@@ -1,6 +1,6 @@
 <template>
   <div class="card metric">
-    <div class="value" :class="colorClass">{{ displayValue }}</div>
+    <div class="value" :class="colorClass" :style="customColor ? { color: customColor } : {}">{{ displayValue }}</div>
     <div class="label"><slot name="label">{{ label }}</slot></div>
     <div v-if="delta != null" :class="['delta', delta > 0 ? 'up' : delta < 0 ? 'down' : '']">
       {{ delta > 0 ? '+' : '' }}{{ delta.toFixed(2) }}%
@@ -13,7 +13,8 @@ const props = defineProps({
   value: { default: '--' },
   label: { type: String, default: '' },
   delta: { default: null },
-  color: { type: String, default: '' }, // 'up' | 'down' | ''
+  color: { type: String, default: '' },
+  customColor: { type: String, default: '' },
 })
 const displayValue = computed(() => {
   if (props.value == null) return '--'

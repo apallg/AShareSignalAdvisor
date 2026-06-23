@@ -96,7 +96,7 @@ class DataFetcher:
         """??IFZQ HTTP API ?????????????"""
         url = f"http://ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},day,,,640,{adj}"
         try:
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=10, proxies={"http": None, "https": None})
             data = resp.json()
             if data.get("code") != 0:
                 return None
@@ -137,7 +137,7 @@ class DataFetcher:
         adj = "qfq" if adjust == "qfq" else ("hfq" if adjust == "hfq" else "")
         url = f"http://ifzq.gtimg.cn/appstock/app/fqkline/get?param={mkt}{symbol},day,,,640,{adj}"
         try:
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=10, proxies={"http": None, "https": None})
             data = resp.json()
             if data.get("code") != 0:
                 return None
@@ -181,7 +181,7 @@ class DataFetcher:
         mkt = "sh" if symbol.startswith(("6", "5")) else "sz"
         url = f"http://qt.gtimg.cn/q={mkt}{symbol}"
         try:
-            resp = requests.get(url, timeout=5)
+            resp = requests.get(url, timeout=5, proxies={"http": None, "https": None})
             resp.encoding = "gbk"
             fields = resp.text.split("~")
             if len(fields) >= 2:
@@ -197,7 +197,7 @@ class DataFetcher:
         prefix = "0" if symbol.startswith(("6", "5")) else "1"
         url = f"http://quotes.money.163.com/service/chddata.html?code={prefix}{symbol}&start={start_date[:10]}&end={end_date[:10]}"
         try:
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=10, proxies={"http": None, "https": None})
             resp.encoding = "gbk"
             lines = resp.text.strip().split("\r\n")
             if len(lines) < 2:
@@ -495,38 +495,40 @@ class DataFetcher:
 
     def get_sector_performance(self):
         ck = CacheManager.make_key("sectors")
+        perf_ttl = getattr(config, 'CACHE_EXPIRE_SECTOR_PERF', 600)
+
         # 1. Try THS (同花顺) — 不走东方财富域名，不受代理影响
         try:
             result = self._ths_sectors()
             if result is not None and not result.empty:
-                self.cache.set(ck, result, expire=600)
-                self._persist(ck, result, 600)
+                self.cache.set(ck, result, expire=perf_ttl)
+                self._persist(ck, result, perf_ttl)
                 self._mark_source("sectors", "同花顺(THS)")
                 return result
         except Exception as e:
             logger.warning(f"THS sectors 失败: {e}")
 
-        # 2. Try akshare (EastMoney)
+        # 2. Try EastMoney direct HTTP (不经过 akshare)
+        try:
+            result = self._em_sector_performance()
+            if result is not None and not result.empty:
+                self.cache.set(ck, result, expire=perf_ttl)
+                self._persist(ck, result, perf_ttl)
+                self._mark_source("sectors", "东方财富直接HTTP")
+                return result
+        except Exception as e:
+            logger.warning(f"EastMoney direct sectors 失败: {e}")
+
+        # 3. Try akshare (EastMoney via akshare)
         def _fetch():
             return _retry(lambda: ak.stock_board_industry_name_em(), ma=2, dl=3)
         try:
-            result = self._get_with_fallback(ck, _fetch, 600)
+            result = self._get_with_fallback(ck, _fetch, perf_ttl)
             if result is not None and not result.empty:
                 self._mark_source("sectors", "东方财富(akshare)")
                 return result
         except Exception as e:
             logger.warning(f"akshare sectors 失败: {e}")
-
-        # 3. Try Sina HTTP (legacy, may be broken)
-        try:
-            result = self._sina_sectors()
-            if result is not None and not result.empty:
-                self.cache.set(ck, result, expire=600)
-                self._persist(ck, result, 600)
-                self._mark_source("sectors", "新浪板块排行 HTTP")
-                return result
-        except Exception as e:
-            logger.warning(f"Sina sectors 失败: {e}")
 
         raise Exception("板块数据: 所有数据源均不可用")
 
@@ -544,12 +546,126 @@ class DataFetcher:
         df["涨跌幅"] = pd.to_numeric(df["涨跌幅"], errors="coerce")
         return df[["板块名称", "涨跌幅"]]
 
+    def _em_sector_list(self):
+        """通过东方财富 push2 HTTP 直接获取板块列表 (不经过 akshare)
+        返回 DataFrame，列: 板块名称, 板块代码, 涨跌幅, 最新价"""
+        import requests
+        url = (
+            "http://push2.eastmoney.com/api/qt/clist/get"
+            "?fid=f3&po=1&pz=200&pn=1&np=1&fltt=2&invt=2"
+            "&fs=m:90+t2"
+            "&fields=f2,f3,f4,f12,f14"
+        )
+        headers = {"Referer": "https://data.eastmoney.com/", "User-Agent": "Mozilla/5.0"}
+        try:
+            resp = requests.get(url, timeout=5, proxies={"http": None, "https": None}, headers=headers)
+            data = resp.json()
+            if not data.get("data") or not data["data"].get("diff"):
+                logger.warning("EastMoney sector list: 响应无数据")
+                return None
+            rows = []
+            for item in data["data"]["diff"]:
+                rows.append({
+                    "板块名称": item.get("f14", ""),
+                    "板块代码": item.get("f12", ""),
+                    "涨跌幅": item.get("f3", 0),
+                    "最新价": item.get("f2", 0),
+                })
+            if not rows:
+                return None
+            df = pd.DataFrame(rows)
+            df["涨跌幅"] = pd.to_numeric(df["涨跌幅"], errors="coerce")
+            return df
+        except Exception as e:
+            logger.warning(f"EastMoney sector list HTTP 失败: {e}")
+            return None
+
+    def _em_sector_constituents(self, sector_code):
+        """通过东方财富 push2 HTTP 直接获取板块成分股 (不经过 akshare)
+        返回 DataFrame，列: 代码/名称/最新价/涨跌幅/涨跌额/成交量/成交额/换手率 等"""
+        import requests
+        url = (
+            f"http://push2.eastmoney.com/api/qt/clist/get"
+            f"?pn=1&pz=500&po=1&np=1&fltt=2&invt=2"
+            f"&fid=f3&fs=b:{sector_code}+f:!50"
+            f"&fields=f2,f3,f4,f5,f6,f8,f9,f10,f12,f14,f15,f16,f17,f18,f20"
+        )
+        headers = {"Referer": "https://data.eastmoney.com/", "User-Agent": "Mozilla/5.0"}
+        try:
+            resp = requests.get(url, timeout=5, proxies={"http": None, "https": None}, headers=headers)
+            data = resp.json()
+            if not data.get("data") or not data["data"].get("diff"):
+                logger.warning(f"EastMoney sector constituents({sector_code}): 响应无数据")
+                return None
+            rows = []
+            for item in data["data"]["diff"]:
+                rows.append({
+                    "代码": item.get("f12", ""),
+                    "名称": item.get("f14", ""),
+                    "最新价": item.get("f2", 0),
+                    "涨跌幅": item.get("f3", 0),
+                    "涨跌额": item.get("f4", 0),
+                    "成交量": item.get("f5", 0),
+                    "成交额": item.get("f6", 0),
+                    "换手率": item.get("f8", 0),
+                    "市盈率-动态": item.get("f9", 0),
+                    "量比": item.get("f10", 0),
+                    "最高": item.get("f15", 0),
+                    "最低": item.get("f16", 0),
+                    "今开": item.get("f17", 0),
+                    "昨收": item.get("f18", 0),
+                    "总市值": item.get("f20", 0),
+                })
+            if not rows:
+                return None
+            df = pd.DataFrame(rows)
+            for col in ["最新价","涨跌幅","涨跌额","成交量","成交额","换手率","市盈率-动态","最高","最低","今开","昨收"]:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+            return df
+        except Exception as e:
+            logger.warning(f"EastMoney sector constituents({sector_code}) HTTP 失败: {e}")
+            return None
+
+    def _em_sector_performance(self):
+        """通过东方财富 push2 HTTP 直接获取板块涨跌排行 (不经过 akshare)
+        返回 DataFrame，列: 板块名称, 涨跌幅"""
+        import requests
+        url = (
+            "http://push2.eastmoney.com/api/qt/clist/get"
+            "?fid=f3&po=1&pz=50&pn=1&np=1&fltt=2&invt=2"
+            "&fs=m:90+t2"
+            "&fields=f2,f3,f4,f12,f14"
+        )
+        headers = {"Referer": "https://data.eastmoney.com/", "User-Agent": "Mozilla/5.0"}
+        try:
+            resp = requests.get(url, timeout=5, proxies={"http": None, "https": None}, headers=headers)
+            data = resp.json()
+            if not data.get("data") or not data["data"].get("diff"):
+                logger.warning("EastMoney sector performance: 响应无数据")
+                return None
+            rows = []
+            for item in data["data"]["diff"]:
+                rows.append({
+                    "板块名称": item.get("f14", ""),
+                    "涨跌幅": item.get("f3", 0),
+                })
+            if not rows:
+                return None
+            df = pd.DataFrame(rows)
+            df["涨跌幅"] = pd.to_numeric(df["涨跌幅"], errors="coerce")
+            return df[["板块名称", "涨跌幅"]]
+        except Exception as e:
+            logger.warning(f"EastMoney sector performance HTTP 失败: {e}")
+            return None
+
+    # DEPRECATED: 新浪板块端点已损坏 (返回 "Invalid view go")，不再作为活跃回退
     def _sina_sectors(self):
         import re
         import requests
         url = "http://vip.stock.finance.sina.com.cn/q/go.php/vIndustryRank/kind/sshy/p/1/num/50/sort/changepercent/"
         try:
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=10, proxies={"http": None, "https": None})
             resp.encoding = "gbk"
             if not resp.text or len(resp.text) < 100:
                 logger.warning(f"Sina sectors 响应内容过短: {resp.text[:200]}")
@@ -657,3 +773,54 @@ class DataFetcher:
             raise ValueError(f"{symbol} 实时数据不存在")
         row = match.iloc[0]
         return {"\u540d\u79f0":row.get("\u540d\u79f0"),"\u6700\u65b0\u4ef7":row.get("\u6700\u65b0\u4ef7"),"\u6da8\u8dcc\u5e45":row.get("\u6da8\u8dcc\u5e45"),"\u6da8\u8dcc\u989d":row.get("\u6da8\u8dcc\u989d"),"\u6210\u4ea4\u91cf":row.get("\u6210\u4ea4\u91cf"),"\u6210\u4ea4\u989d":row.get("\u6210\u4ea4\u989d"),"\u5e02\u76c8\u7387":row.get("\u5e02\u76c8\u7387-\u52a8\u6001"),"\u5e02\u51c0\u7387":row.get("\u5e02\u51c0\u7387")}
+
+    def get_industry_map(self) -> dict:
+        """
+        通过 baostock 获取全市场股票→行业分类映射，本地缓存 24 小时
+
+        返回: {code: {"name": stock_name, "industry": industry_name}, ...}
+             code 格式为 6 位纯数字 (如 "600519")
+        """
+        cache_key = "industry_map_v1"
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            import baostock as bs
+            lg = bs.login()
+            if lg.error_code != "0":
+                logger.warning(f"BaoStock login 失败: {lg.error_msg}")
+                return {}
+
+            # 拉全市场行业分类
+            rs = bs.query_stock_industry()
+            if rs is None or rs.error_code != "0":
+                bs.logout()
+                logger.warning(f"BaoStock query_stock_industry 失败")
+                return {}
+
+            mapping = {}
+            while rs.next():
+                row = rs.get_row_data()
+                raw_code = row[0]        # "sh.600519"
+                stock_name = row[1]       # "贵州茅台"
+                industry = row[2]         # "白酒"
+
+                # 统一为纯数字代码
+                if "." in raw_code:
+                    code = raw_code.split(".")[1]
+                else:
+                    code = raw_code
+                mapping[code] = {"name": stock_name, "industry": industry}
+
+            bs.logout()
+
+            if mapping:
+                self.cache.set(cache_key, mapping, expire=86400)
+                logger.info(f"BaoStock 行业映射已缓存: {len(mapping)} 只股票")
+
+            return mapping
+        except Exception as e:
+            logger.warning(f"BaoStock industry map 失败: {e}")
+            return {}
